@@ -8,10 +8,15 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
 jobs:
   sync:
     name: Sync with Upstream
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -24,11 +29,46 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Sync upstream changes
+      - name: Fetch upstream
+        id: upstream
         run: |
-          git remote add upstream https://github.com/pingdotgg/t3code.git || git remote set-url upstream https://github.com/pingdotgg/t3code.git
-          git fetch upstream main
+          git remote add upstream https://github.com/pingdotgg/t3code.git \
+            || git remote set-url upstream https://github.com/pingdotgg/t3code.git
+
+          # 上游被删除、改名或网络不可达时跳过本次同步，而不是每天把工作流标红。
+          # fork 是独立仓库，上游消失不影响本仓库的数据。
+          if ! git ls-remote --exit-code --heads upstream main >/dev/null 2>&1; then
+            echo "::warning::upstream/main is unreachable (deleted, renamed, or offline); skipping this sync."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # 已确认可达，fetch 失败按临时故障处理，跳过而不是标红。
+          # 不带 refspec，确保 remote add 配置的 refspec 会更新 upstream/main。
+          if ! git fetch upstream; then
+            echo "::warning::git fetch upstream main failed; skipping this sync."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "available=true" >> "$GITHUB_OUTPUT"
+
+      - name: Sync upstream changes
+        if: steps.upstream.outputs.available == 'true'
+        run: |
           git checkout main
+
+          # 只接受与本地共享历史的上游分支。若 upstream/main 毫无共同祖先，
+          # 说明该 URL 可能已被他人接管，宁可不合并，也不让无关历史进入 main。
+          if ! git merge-base HEAD upstream/main >/dev/null 2>&1; then
+            echo "::error::upstream/main shares no history with this fork; refusing to merge."
+            exit 1
+          fi
+
           # 合并上游 main 分支改动，并添加 [skip ci] 避免消耗大量构建配额
-          git merge upstream/main -m "chore: sync with upstream [skip ci]" --allow-unrelated-histories || (echo "Merge conflict detected! Please resolve conflicts manually." && exit 1)
+          if ! git merge upstream/main -m "chore: sync with upstream [skip ci]"; then
+            echo "::error::Merge conflict detected! Please resolve conflicts manually."
+            exit 1
+          fi
+
           git push origin main
