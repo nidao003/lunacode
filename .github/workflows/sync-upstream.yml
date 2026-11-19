@@ -32,8 +32,12 @@ jobs:
       - name: Fetch upstream
         id: upstream
         run: |
-          git remote add upstream https://github.com/pingdotgg/t3code.git \
-            || git remote set-url upstream https://github.com/pingdotgg/t3code.git
+          # 用 get-url 判断，避免 remote 已存在时 git remote add 产生一次失败日志。
+          if git remote get-url upstream >/dev/null 2>&1; then
+            git remote set-url upstream https://github.com/pingdotgg/t3code.git
+          else
+            git remote add upstream https://github.com/pingdotgg/t3code.git
+          fi
 
           # 上游被删除、改名或网络不可达时跳过本次同步，而不是每天把工作流标红。
           # fork 是独立仓库，上游消失不影响本仓库的数据。
