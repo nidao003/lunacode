@@ -2,7 +2,8 @@ name: Upstream Sync
 
 on:
   schedule:
-    - cron: '0 0 * * *' # 每天 UTC 00:00 (北京时间 08:00) 自动同步
+    # 每 6 小时同步一次，避开整点 0 分的 GitHub Actions 调度高峰
+    - cron: '17 */6 * * *'
   workflow_dispatch: # 支持在 GitHub Actions 页面手动点击触发
 
 permissions:
@@ -19,15 +20,16 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: main
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Configure Git
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Fetch upstream
         id: upstream
@@ -47,9 +49,8 @@ jobs:
             exit 0
           fi
 
-          # 已确认可达，fetch 失败按临时故障处理，跳过而不是标红。
-          # 不带 refspec，确保 remote add 配置的 refspec 会更新 upstream/main。
-          if ! git fetch upstream; then
+          # 仅拉取上游 main 并显式更新 upstream/main，避免拉取无关分支和 tags。
+          if ! git fetch --no-tags upstream +refs/heads/main:refs/remotes/upstream/main; then
             echo "::warning::git fetch upstream main failed; skipping this sync."
             echo "available=false" >> "$GITHUB_OUTPUT"
             exit 0
@@ -59,6 +60,9 @@ jobs:
 
       - name: Sync upstream changes
         if: steps.upstream.outputs.available == 'true'
+        env:
+          PUSH_TOKEN: ${{ secrets.SYNC_PAT || github.token }}
+          HAS_SYNC_PAT: ${{ secrets.SYNC_PAT != '' }}
         run: |
           git checkout main
 
@@ -69,10 +73,23 @@ jobs:
             exit 1
           fi
 
-          # 合并上游 main 分支改动，并添加 [skip ci] 避免消耗大量构建配额
-          if ! git merge upstream/main -m "chore: sync with upstream [skip ci]"; then
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "Already up to date with upstream/main."
+            exit 0
+          fi
+
+          # 使用 --no-ff 保证每次同步提交都带有 [skip ci]，避免使用 PAT 推送时误触发上游 CI。
+          if ! git merge --no-ff upstream/main -m "chore: sync with upstream [skip ci]"; then
             echo "::error::Merge conflict detected! Please resolve conflicts manually."
             exit 1
           fi
 
-          git push origin main
+          auth_b64="$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 | tr -d '\r\n')"
+          echo "::add-mask::${auth_b64}"
+
+          if ! git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_b64}" push origin main; then
+            if [ "$HAS_SYNC_PAT" != "true" ]; then
+              echo "::error::Push failed without secrets.SYNC_PAT. Upstream may have modified .github/workflows/; configure SYNC_PAT with Contents (write) and Workflows (write) permissions."
+            fi
+            exit 1
+          fi
