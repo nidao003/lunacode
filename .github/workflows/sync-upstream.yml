@@ -20,16 +20,22 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          ref: main
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Configure Git
+        env:
+          CLONE_TOKEN: ${{ github.token }}
         run: |
+          # 直接用 git init + fetch，避免 actions/checkout 清理凭据时触发 .repos 中无 .gitmodules URL 的子模块报错，
+          # 且不将任何 token 持久化写入 .git/config。
+          git init -b main
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          auth_b64="$(printf 'x-access-token:%s' "$CLONE_TOKEN" | base64 | tr -d '\r\n')"
+          echo "::add-mask::${auth_b64}"
+
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_b64}" \
+            fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git checkout -B main origin/main
 
       - name: Fetch upstream
         id: upstream
