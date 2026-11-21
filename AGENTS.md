@@ -1,3 +1,5 @@
+> **[LunaCode Fork — 二开必读]** 本仓库为 `pingdotgg/t3code` 的定制二开 Fork（`nidao003/lunacode`）。`main` 为 GitHub Actions 自动同步上游的只读镜像，**严禁在 `main` 上开发或提交**；所有二开均在 `lunacode` 分支进行。开展任何开发、建 worktree 或合并上游操作前，**必须先完整阅读 [AGENTS.fork.md](AGENTS.fork.md)**（规则冲突时，本仓库二开策略以 `AGENTS.fork.md` 为准）。
+
 # T3 Code
 
 T3 Code is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs and agents (Codex, Claude Code, Cursor, Grok, OpenCode, Antigravity, Kiro, Pi, Muse Code, fx) and serves web, desktop, and mobile clients.
