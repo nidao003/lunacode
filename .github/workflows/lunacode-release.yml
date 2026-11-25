@@ -1,0 +1,1113 @@
+name: LunaCode Release
+
+on:
+  push:
+    tags:
+      - "lunacode-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Override desktop version (default reads apps/desktop/package.json)
+        required: false
+        type: string
+      publish_release:
+        description: Publish a GitHub Release (off = upload Actions artifacts only)
+        required: true
+        default: false
+        type: boolean
+      prerelease:
+        description: Mark GitHub Release as pre-release
+        required: true
+        default: false
+        type: boolean
+      build_mac_arm64:
+        description: Build macOS Apple Silicon (arm64 DMG/ZIP)
+        required: true
+        default: true
+        type: boolean
+      build_mac_x64:
+        description: Build macOS Intel (x64 DMG/ZIP)
+        required: true
+        default: false
+        type: boolean
+      build_linux_x64:
+        description: Build Linux x64 (AppImage/DEB)
+        required: true
+        default: true
+        type: boolean
+      build_win_x64:
+        description: Build Windows x64 (NSIS EXE)
+        required: true
+        default: true
+        type: boolean
+      build_android_apk:
+        description: Build Android arm64-v8a Release APK
+        required: true
+        default: true
+        type: boolean
+      build_ios_ipa:
+        description: Build iOS unsigned sideload-ready IPA
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: lunacode-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Resolve build metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      publish_release: ${{ steps.meta.outputs.publish_release }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      mac_arm64: ${{ steps.meta.outputs.mac_arm64 }}
+      mac_x64: ${{ steps.meta.outputs.mac_x64 }}
+      linux_x64: ${{ steps.meta.outputs.linux_x64 }}
+      win_x64: ${{ steps.meta.outputs.win_x64 }}
+      android_apk: ${{ steps.meta.outputs.android_apk }}
+      ios_ipa: ${{ steps.meta.outputs.ios_ipa }}
+      need_desktop_bundle: ${{ steps.meta.outputs.need_desktop_bundle }}
+    steps:
+      - name: Sparse checkout
+        shell: bash
+        env:
+          CHECKOUT_SHA: ${{ github.sha }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${CHECKOUT_SHA}"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+
+      - id: meta
+        name: Resolve version and target matrix
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_PUBLISH_RELEASE: ${{ inputs.publish_release }}
+          INPUT_PRERELEASE: ${{ inputs.prerelease }}
+          INPUT_MAC_ARM64: ${{ inputs.build_mac_arm64 }}
+          INPUT_MAC_X64: ${{ inputs.build_mac_x64 }}
+          INPUT_LINUX_X64: ${{ inputs.build_linux_x64 }}
+          INPUT_WIN_X64: ${{ inputs.build_win_x64 }}
+          INPUT_ANDROID_APK: ${{ inputs.build_android_apk }}
+          INPUT_IOS_IPA: ${{ inputs.build_ios_ipa }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            version="${GITHUB_REF_NAME#lunacode-v}"
+            tag="${GITHUB_REF_NAME}"
+            publish_release="true"
+            mac_arm64="true"
+            mac_x64="false"
+            linux_x64="true"
+            win_x64="true"
+            android_apk="true"
+            ios_ipa="true"
+            if [[ "$version" == *-* ]]; then
+              prerelease="true"
+            else
+              prerelease="false"
+            fi
+          else
+            default_version="$(jq -r '.version' apps/desktop/package.json)"
+            version="${INPUT_VERSION:-$default_version}"
+            version="${version#lunacode-v}"
+            version="${version#v}"
+            tag="lunacode-v${version}"
+            publish_release="${INPUT_PUBLISH_RELEASE:-false}"
+            mac_arm64="${INPUT_MAC_ARM64:-true}"
+            mac_x64="${INPUT_MAC_X64:-false}"
+            linux_x64="${INPUT_LINUX_X64:-true}"
+            win_x64="${INPUT_WIN_X64:-true}"
+            android_apk="${INPUT_ANDROID_APK:-true}"
+            ios_ipa="${INPUT_IOS_IPA:-true}"
+            if [[ "${INPUT_PRERELEASE:-false}" == "true" || "$version" == *-* ]]; then
+              prerelease="true"
+            else
+              prerelease="false"
+            fi
+          fi
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid LunaCode version: $version"
+            exit 1
+          fi
+
+          if [[ "$mac_arm64" == "true" || "$mac_x64" == "true" || "$linux_x64" == "true" || "$win_x64" == "true" ]]; then
+            need_desktop_bundle="true"
+          else
+            need_desktop_bundle="false"
+          fi
+
+          if [[ "$need_desktop_bundle" != "true" && "$android_apk" != "true" && "$ios_ipa" != "true" ]]; then
+            echo "::error::At least one target platform must be enabled."
+            exit 1
+          fi
+
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "publish_release=$publish_release"
+            echo "prerelease=$prerelease"
+            echo "mac_arm64=$mac_arm64"
+            echo "mac_x64=$mac_x64"
+            echo "linux_x64=$linux_x64"
+            echo "win_x64=$win_x64"
+            echo "android_apk=$android_apk"
+            echo "ios_ipa=$ios_ipa"
+            echo "need_desktop_bundle=$need_desktop_bundle"
+          } >> "$GITHUB_OUTPUT"
+
+  build_bundle:
+    name: Build JS bundle
+    needs: [prepare]
+    if: needs.prepare.outputs.need_desktop_bundle == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Sparse checkout
+        shell: bash
+        env:
+          CHECKOUT_SHA: ${{ github.sha }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${CHECKOUT_SHA}"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+
+      - name: Align package versions
+        run: node scripts/update-release-package-versions.ts "${{ needs.prepare.outputs.version }}"
+
+      - name: Build desktop JS bundle
+        env:
+          T3CODE_TELEMETRY_CHANNEL: dev
+        run: vp run build:desktop:bundle
+
+      - name: Upload JS bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: js-bundle
+          path: |
+            apps/server/dist
+            apps/desktop/dist-electron
+          if-no-files-found: error
+          retention-days: 1
+
+  desktop_mac_arm64:
+    name: Desktop macOS arm64
+    needs: [prepare, build_bundle]
+    if: needs.prepare.outputs.mac_arm64 == 'true'
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Sparse checkout
+        shell: bash
+        env:
+          CHECKOUT_SHA: ${{ github.sha }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${CHECKOUT_SHA}"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+          save-pnpm-store: "true"
+
+      - name: Resolve staged install cache
+        id: stage_pnpm
+        shell: bash
+        run: |
+          echo "dir=$RUNNER_TEMP/desktop-stage-pnpm" >> "$GITHUB_OUTPUT"
+          echo "prefix=lunacode-stage-pnpm-v1-mac-arm64-$(date -u +%G-%V)-" >> "$GITHUB_OUTPUT"
+
+      - name: Restore staged install cache
+        id: stage_pnpm_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.stage_pnpm.outputs.dir }}
+          key: ${{ steps.stage_pnpm.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ${{ steps.stage_pnpm.outputs.prefix }}
+
+      - name: Mark staged install cache
+        shell: bash
+        run: mkdir -p "${{ steps.stage_pnpm.outputs.dir }}" && touch "$RUNNER_TEMP/desktop-stage-pnpm.marker"
+
+      - name: Cache resource monitor
+        id: resource_monitor_cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: native/resource-monitor/target/aarch64-apple-darwin/release/t3-resource-monitor
+          key: resource-monitor-aarch64-apple-darwin-${{ hashFiles('.cargo/config.toml', 'native/resource-monitor/Cargo.lock', 'native/resource-monitor/Cargo.toml', 'native/resource-monitor/src/**') }}
+
+      - name: Setup Rust
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          targets: aarch64-apple-darwin
+
+      - name: Build resource monitor
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        run: cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target aarch64-apple-darwin
+
+      - name: Align package versions
+        run: node scripts/update-release-package-versions.ts "${{ needs.prepare.outputs.version }}"
+
+      - name: Download JS bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: js-bundle
+          path: apps
+
+      - name: Build macOS arm64 DMG
+        shell: bash
+        env:
+          TMPDIR: /tmp
+          pnpm_config_cache_dir: ${{ steps.stage_pnpm.outputs.dir }}/cache
+          pnpm_config_store_dir: ${{ steps.stage_pnpm.outputs.dir }}/store
+          pnpm_config_prefer_offline: "true"
+          T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "true"
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          MACOS_PROVISIONING_PROFILE: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
+        run: |
+          set -euo pipefail
+          args=(
+            --platform mac
+            --target dmg
+            --arch arm64
+            --build-version "${{ needs.prepare.outputs.version }}"
+            --skip-build
+            --verbose
+          )
+
+          has_all() {
+            for value in "$@"; do
+              if [[ -z "$value" ]]; then
+                return 1
+              fi
+            done
+            return 0
+          }
+
+          if has_all "${CSC_LINK:-}" "${CSC_KEY_PASSWORD:-}" "${APPLE_API_KEY:-}" "${APPLE_API_KEY_ID:-}" "${APPLE_API_ISSUER:-}" "${APPLE_TEAM_ID:-}" "${MACOS_PROVISIONING_PROFILE:-}"; then
+            key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+            printf '%s' "$APPLE_API_KEY" > "$key_path"
+            export APPLE_API_KEY="$key_path"
+
+            profile_path="$RUNNER_TEMP/lunacode.provisionprofile"
+            printf '%s' "$MACOS_PROVISIONING_PROFILE" | base64 -D > "$profile_path"
+            security cms -D -i "$profile_path" >/dev/null
+            export T3CODE_APPLE_TEAM_ID="$APPLE_TEAM_ID"
+            export T3CODE_MACOS_PROVISIONING_PROFILE="$profile_path"
+            args+=(--signed)
+            echo "macOS Developer ID signing enabled."
+          else
+            echo "macOS Developer ID secrets absent; building unsigned DMG/ZIP."
+          fi
+
+          vp run dist:desktop:artifact "${args[@]}"
+
+      - name: Check staged install cache for new content
+        id: stage_pnpm_changed
+        shell: bash
+        run: |
+          dir="${{ steps.stage_pnpm.outputs.dir }}"
+          new=$(find "$dir/cache/v12" "$dir/store/v11/files" -type f -newer "$RUNNER_TEMP/desktop-stage-pnpm.marker" 2>/dev/null | wc -l | tr -d ' ')
+          echo "changed=$([[ "$new" -gt 0 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Save staged install cache
+        if: steps.stage_pnpm_changed.outputs.changed == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.stage_pnpm.outputs.dir }}
+          key: ${{ steps.stage_pnpm_cache.outputs.cache-primary-key }}
+
+      - name: Collect macOS arm64 artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-publish
+          shopt -s nullglob
+          for file in release/*.dmg release/*.zip; do
+            cp "$file" release-publish/
+          done
+
+      - name: Upload macOS arm64 artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lunacode-desktop-mac-arm64
+          path: release-publish/*
+          if-no-files-found: error
+          compression-level: 0
+
+  desktop_mac_x64:
+    name: Desktop macOS x64
+    needs: [prepare, build_bundle]
+    if: needs.prepare.outputs.mac_x64 == 'true'
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Sparse checkout
+        shell: bash
+        env:
+          CHECKOUT_SHA: ${{ github.sha }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${CHECKOUT_SHA}"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+          save-pnpm-store: ${{ needs.prepare.outputs.mac_arm64 != 'true' }}
+
+      - name: Resolve staged install cache
+        id: stage_pnpm
+        shell: bash
+        run: |
+          echo "dir=$RUNNER_TEMP/desktop-stage-pnpm" >> "$GITHUB_OUTPUT"
+          echo "prefix=lunacode-stage-pnpm-v1-mac-x64-$(date -u +%G-%V)-" >> "$GITHUB_OUTPUT"
+
+      - name: Restore staged install cache
+        id: stage_pnpm_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.stage_pnpm.outputs.dir }}
+          key: ${{ steps.stage_pnpm.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ${{ steps.stage_pnpm.outputs.prefix }}
+
+      - name: Mark staged install cache
+        shell: bash
+        run: mkdir -p "${{ steps.stage_pnpm.outputs.dir }}" && touch "$RUNNER_TEMP/desktop-stage-pnpm.marker"
+
+      - name: Ensure Rosetta for macOS x64 build
+        shell: bash
+        run: |
+          if [[ "$(uname -m)" == "arm64" ]] && ! /usr/bin/arch -x86_64 /usr/bin/true; then
+            sudo /usr/sbin/softwareupdate --install-rosetta --agree-to-license
+          fi
+
+      - name: Cache resource monitor
+        id: resource_monitor_cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: native/resource-monitor/target/x86_64-apple-darwin/release/t3-resource-monitor
+          key: resource-monitor-x86_64-apple-darwin-${{ hashFiles('.cargo/config.toml', 'native/resource-monitor/Cargo.lock', 'native/resource-monitor/Cargo.toml', 'native/resource-monitor/src/**') }}
+
+      - name: Setup Rust
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          targets: x86_64-apple-darwin
+
+      - name: Build resource monitor
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        run: cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target x86_64-apple-darwin
+
+      - name: Align package versions
+        run: node scripts/update-release-package-versions.ts "${{ needs.prepare.outputs.version }}"
+
+      - name: Download JS bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: js-bundle
+          path: apps
+
+      - name: Build macOS x64 DMG
+        shell: bash
+        env:
+          TMPDIR: /tmp
+          pnpm_config_cache_dir: ${{ steps.stage_pnpm.outputs.dir }}/cache
+          pnpm_config_store_dir: ${{ steps.stage_pnpm.outputs.dir }}/store
+          pnpm_config_prefer_offline: "true"
+          T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "true"
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          MACOS_PROVISIONING_PROFILE: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
+        run: |
+          set -euo pipefail
+          args=(
+            --platform mac
+            --target dmg
+            --arch x64
+            --build-version "${{ needs.prepare.outputs.version }}"
+            --skip-build
+            --verbose
+          )
+
+          has_all() {
+            for value in "$@"; do
+              if [[ -z "$value" ]]; then
+                return 1
+              fi
+            done
+            return 0
+          }
+
+          if has_all "${CSC_LINK:-}" "${CSC_KEY_PASSWORD:-}" "${APPLE_API_KEY:-}" "${APPLE_API_KEY_ID:-}" "${APPLE_API_ISSUER:-}" "${APPLE_TEAM_ID:-}" "${MACOS_PROVISIONING_PROFILE:-}"; then
+            key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+            printf '%s' "$APPLE_API_KEY" > "$key_path"
+            export APPLE_API_KEY="$key_path"
+
+            profile_path="$RUNNER_TEMP/lunacode.provisionprofile"
+            printf '%s' "$MACOS_PROVISIONING_PROFILE" | base64 -D > "$profile_path"
+            security cms -D -i "$profile_path" >/dev/null
+            export T3CODE_APPLE_TEAM_ID="$APPLE_TEAM_ID"
+            export T3CODE_MACOS_PROVISIONING_PROFILE="$profile_path"
+            args+=(--signed)
+            echo "macOS Developer ID signing enabled."
+          else
+            echo "macOS Developer ID secrets absent; building unsigned DMG/ZIP."
+          fi
+
+          vp run dist:desktop:artifact "${args[@]}"
+
+      - name: Check staged install cache for new content
+        id: stage_pnpm_changed
+        shell: bash
+        run: |
+          dir="${{ steps.stage_pnpm.outputs.dir }}"
+          new=$(find "$dir/cache/v12" "$dir/store/v11/files" -type f -newer "$RUNNER_TEMP/desktop-stage-pnpm.marker" 2>/dev/null | wc -l | tr -d ' ')
+          echo "changed=$([[ "$new" -gt 0 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Save staged install cache
+        if: steps.stage_pnpm_changed.outputs.changed == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.stage_pnpm.outputs.dir }}
+          key: ${{ steps.stage_pnpm_cache.outputs.cache-primary-key }}
+
+      - name: Collect macOS x64 artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-publish
+          shopt -s nullglob
+          for file in release/*.dmg release/*.zip; do
+            cp "$file" release-publish/
+          done
+
+      - name: Upload macOS x64 artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lunacode-desktop-mac-x64
+          path: release-publish/*
+          if-no-files-found: error
+          compression-level: 0
+
+  desktop_linux_x64:
+    name: Desktop Linux x64
+    needs: [prepare, build_bundle]
+    if: needs.prepare.outputs.linux_x64 == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Sparse checkout
+        shell: bash
+        env:
+          CHECKOUT_SHA: ${{ github.sha }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${CHECKOUT_SHA}"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+          save-pnpm-store: "true"
+
+      - name: Resolve staged install cache
+        id: stage_pnpm
+        shell: bash
+        run: |
+          echo "dir=$RUNNER_TEMP/desktop-stage-pnpm" >> "$GITHUB_OUTPUT"
+          echo "prefix=lunacode-stage-pnpm-v1-linux-x64-$(date -u +%G-%V)-" >> "$GITHUB_OUTPUT"
+
+      - name: Restore staged install cache
+        id: stage_pnpm_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.stage_pnpm.outputs.dir }}
+          key: ${{ steps.stage_pnpm.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ${{ steps.stage_pnpm.outputs.prefix }}
+
+      - name: Mark staged install cache
+        shell: bash
+        run: mkdir -p "${{ steps.stage_pnpm.outputs.dir }}" && touch "$RUNNER_TEMP/desktop-stage-pnpm.marker"
+
+      - name: Cache resource monitor
+        id: resource_monitor_cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: native/resource-monitor/target/x86_64-unknown-linux-gnu/release/t3-resource-monitor
+          key: resource-monitor-x86_64-unknown-linux-gnu-${{ hashFiles('.cargo/config.toml', 'native/resource-monitor/Cargo.lock', 'native/resource-monitor/Cargo.toml', 'native/resource-monitor/src/**') }}
+
+      - name: Cache Linux capture helpers
+        id: capture_helper_cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            native/kde-snap-shot/target/x86_64-unknown-linux-gnu/release/t3-kde-snap-shot
+            native/hyprland-snap-shot/target/x86_64-unknown-linux-gnu/release/t3-hyprland-snap-shot
+          key: linux-capture-helpers-x86_64-unknown-linux-gnu-${{ hashFiles('native/kde-snap-shot/Cargo.lock', 'native/kde-snap-shot/Cargo.toml', 'native/kde-snap-shot/src/**', 'native/hyprland-snap-shot/Cargo.lock', 'native/hyprland-snap-shot/Cargo.toml', 'native/hyprland-snap-shot/src/**', 'native/hyprland-snap-shot/protocols/**') }}
+
+      - name: Cache Linux packaging tool archives
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/electron-builder/appimage@*/appimage-tools-runtime-*.tar.gz
+            ~/.cache/electron-builder/fpm@*/fpm-*.7z
+            ~/.cache/electron-builder/7zip@*/7zip-linux-*.tar.gz
+          key: electron-builder-linux-tools-x64-${{ hashFiles('node_modules/.pnpm/app-builder-lib@*/node_modules/app-builder-lib/out/toolsets/linux.js', 'node_modules/.pnpm/app-builder-lib@*/node_modules/app-builder-lib/out/toolsets/7zip.js') }}
+
+      - name: Setup Rust
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true' || steps.capture_helper_cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Build resource monitor
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        run: cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target x86_64-unknown-linux-gnu
+
+      - name: Install Linux desktop build libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev pkg-config libgtk-3-0t64 libnss3 libasound2t64 libgbm1 imagemagick
+
+      - name: Align package versions
+        run: node scripts/update-release-package-versions.ts "${{ needs.prepare.outputs.version }}"
+
+      - name: Download JS bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: js-bundle
+          path: apps
+
+      - name: Build Linux x64 AppImage and DEB
+        shell: bash
+        env:
+          pnpm_config_cache_dir: ${{ steps.stage_pnpm.outputs.dir }}/cache
+          pnpm_config_store_dir: ${{ steps.stage_pnpm.outputs.dir }}/store
+          pnpm_config_prefer_offline: "true"
+          T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "true"
+          T3CODE_DESKTOP_REUSE_LINUX_CAPTURE_HELPERS: ${{ steps.capture_helper_cache.outputs.cache-hit == 'true' }}
+        run: |
+          vp run dist:desktop:artifact \
+            --platform linux \
+            --target AppImage \
+            --arch x64 \
+            --build-version "${{ needs.prepare.outputs.version }}" \
+            --skip-build \
+            --verbose
+
+      - name: Check staged install cache for new content
+        id: stage_pnpm_changed
+        shell: bash
+        run: |
+          dir="${{ steps.stage_pnpm.outputs.dir }}"
+          new=$(find "$dir/cache/v12" "$dir/store/v11/files" -type f -newer "$RUNNER_TEMP/desktop-stage-pnpm.marker" 2>/dev/null | wc -l | tr -d ' ')
+          echo "changed=$([[ "$new" -gt 0 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Save staged install cache
+        if: steps.stage_pnpm_changed.outputs.changed == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.stage_pnpm.outputs.dir }}
+          key: ${{ steps.stage_pnpm_cache.outputs.cache-primary-key }}
+
+      - name: Collect Linux x64 artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-publish
+          shopt -s nullglob
+          for file in release/*.AppImage release/*.deb; do
+            cp "$file" release-publish/
+          done
+
+      - name: Upload Linux x64 artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lunacode-desktop-linux-x64
+          path: release-publish/*
+          if-no-files-found: error
+          compression-level: 0
+
+  desktop_win_x64:
+    name: Desktop Windows x64
+    needs: [prepare, build_bundle]
+    if: needs.prepare.outputs.win_x64 == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Sparse checkout
+        shell: bash
+        env:
+          CHECKOUT_SHA: ${{ github.sha }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${CHECKOUT_SHA}"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+          save-pnpm-store: ${{ needs.prepare.outputs.linux_x64 != 'true' }}
+
+      - name: Resolve staged install cache
+        id: stage_pnpm
+        shell: bash
+        run: |
+          echo "dir=$RUNNER_TEMP/desktop-stage-pnpm" >> "$GITHUB_OUTPUT"
+          echo "prefix=lunacode-stage-pnpm-v1-win-x64-$(date -u +%G-%V)-" >> "$GITHUB_OUTPUT"
+
+      - name: Restore staged install cache
+        id: stage_pnpm_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.stage_pnpm.outputs.dir }}
+          key: ${{ steps.stage_pnpm.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ${{ steps.stage_pnpm.outputs.prefix }}
+
+      - name: Mark staged install cache
+        shell: bash
+        run: mkdir -p "${{ steps.stage_pnpm.outputs.dir }}" && touch "$RUNNER_TEMP/desktop-stage-pnpm.marker"
+
+      - name: Cache resource monitor
+        id: resource_monitor_cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: native/resource-monitor/target/x86_64-pc-windows-msvc/release/t3-resource-monitor.exe
+          key: resource-monitor-x86_64-pc-windows-msvc-${{ hashFiles('.cargo/config.toml', 'native/resource-monitor/Cargo.lock', 'native/resource-monitor/Cargo.toml', 'native/resource-monitor/src/**') }}
+
+      - name: Install LLVM toolchain for cargo-xwin
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          if ! command -v lld-link >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y clang lld llvm
+          fi
+
+      - name: Setup Rust
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install cargo-xwin
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-xwin@0.23.1
+
+      - name: Build Windows resource monitor
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        run: cargo xwin build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target x86_64-pc-windows-msvc
+
+      - name: Align package versions
+        run: node scripts/update-release-package-versions.ts "${{ needs.prepare.outputs.version }}"
+
+      - name: Download JS bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: js-bundle
+          path: apps
+
+      - name: Build Windows x64 NSIS installer
+        shell: bash
+        env:
+          pnpm_config_cache_dir: ${{ steps.stage_pnpm.outputs.dir }}/cache
+          pnpm_config_store_dir: ${{ steps.stage_pnpm.outputs.dir }}/store
+          pnpm_config_prefer_offline: "true"
+          T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "true"
+        run: |
+          vp run dist:desktop:artifact \
+            --platform win \
+            --target nsis \
+            --arch x64 \
+            --build-version "${{ needs.prepare.outputs.version }}" \
+            --skip-build \
+            --verbose
+
+      - name: Check staged install cache for new content
+        id: stage_pnpm_changed
+        shell: bash
+        run: |
+          dir="${{ steps.stage_pnpm.outputs.dir }}"
+          new=$(find "$dir/cache/v12" "$dir/store/v11/files" -type f -newer "$RUNNER_TEMP/desktop-stage-pnpm.marker" 2>/dev/null | wc -l | tr -d ' ')
+          echo "changed=$([[ "$new" -gt 0 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Save staged install cache
+        if: steps.stage_pnpm_changed.outputs.changed == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.stage_pnpm.outputs.dir }}
+          key: ${{ steps.stage_pnpm_cache.outputs.cache-primary-key }}
+
+      - name: Collect Windows x64 artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-publish
+          shopt -s nullglob
+          for file in release/*.exe; do
+            cp "$file" release-publish/
+          done
+
+      - name: Upload Windows x64 artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lunacode-desktop-win-x64
+          path: release-publish/*
+          if-no-files-found: error
+          compression-level: 0
+
+  mobile_android_apk:
+    name: Mobile Android arm64-v8a APK
+    needs: [prepare]
+    if: needs.prepare.outputs.android_apk == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      APP_VARIANT: production
+      EXPO_NO_GIT_STATUS: "1"
+      EXPO_NO_TYPESCRIPT_SETUP: "1"
+      NODE_OPTIONS: --max-old-space-size=8192
+    steps:
+      - name: Sparse checkout
+        shell: bash
+        env:
+          CHECKOUT_SHA: ${{ github.sha }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${CHECKOUT_SHA}"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=@t3tools/mobile... --filter=@t3tools/scripts...
+          save-pnpm-store: ${{ needs.prepare.outputs.need_desktop_bundle != 'true' }}
+
+      - name: Setup Java 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Cache Gradle and Android ccache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.cache/lunacode-android-ccache
+          key: lunacode-android-apk-${{ hashFiles('apps/mobile/package.json', 'apps/mobile/app.config.ts', 'apps/mobile/plugins/**', 'apps/mobile/modules/**', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            lunacode-android-apk-
+
+      - name: Configure ccache
+        shell: bash
+        run: |
+          set -euo pipefail
+          ccache_dir="$HOME/.cache/lunacode-android-ccache"
+          mkdir -p "$ccache_dir"
+          sudo apt-get update -qq && sudo apt-get install -y -qq ccache
+          {
+            echo "CCACHE_DIR=$ccache_dir"
+            echo "CCACHE_MAXSIZE=5G"
+            echo "CCACHE_COMPILERCHECK=%compiler% -v"
+            echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
+            echo "CMAKE_C_COMPILER_LAUNCHER=ccache"
+            echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache"
+          } >> "$GITHUB_ENV"
+
+      - name: Prebuild Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/mobile
+          vp exec expo prebuild --clean --platform android --no-install
+
+      - name: Build Android Release APK
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mobile_version="$(cd apps/mobile && vp exec expo config --type public --json | jq -r '.version')"
+          (cd apps/mobile/android && ./gradlew app:assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon)
+
+          apk_src="apps/mobile/android/app/build/outputs/apk/release/app-release.apk"
+          test -f "$apk_src"
+          mkdir -p release-android
+          apk_dest="release-android/LunaCode-mobile-${mobile_version}-arm64-v8a-release.apk"
+          cp "$apk_src" "$apk_dest"
+
+          if [[ -n "${ANDROID_KEYSTORE_BASE64:-}" && -n "${ANDROID_KEYSTORE_PASSWORD:-}" && -n "${ANDROID_KEY_ALIAS:-}" && -n "${ANDROID_KEY_PASSWORD:-}" ]]; then
+            keystore_path="$RUNNER_TEMP/lunacode-release.keystore"
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+            apksigner_bin="$(ls -d "${ANDROID_HOME}"/build-tools/*/apksigner | sort -V | tail -n 1)"
+            "$apksigner_bin" sign \
+              --ks "$keystore_path" \
+              --ks-key-alias "$ANDROID_KEY_ALIAS" \
+              --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+              --key-pass env:ANDROID_KEY_PASSWORD \
+              "$apk_dest"
+            "$apksigner_bin" verify "$apk_dest"
+            echo "Android APK signed with release keystore."
+          else
+            echo "Android release keystore secrets absent; using default build signing."
+          fi
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lunacode-mobile-android-apk
+          path: release-android/*.apk
+          if-no-files-found: error
+          compression-level: 0
+
+  mobile_ios_ipa:
+    name: Mobile iOS IPA (unsigned)
+    needs: [prepare]
+    if: needs.prepare.outputs.ios_ipa == 'true'
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      APP_VARIANT: production
+      EXPO_NO_GIT_STATUS: "1"
+      EXPO_NO_TYPESCRIPT_SETUP: "1"
+      T3CODE_IOS_PERSONAL_TEAM: "1"
+      T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID: com.nidao003.lunacode.mobile
+      NODE_OPTIONS: --max-old-space-size=8192
+    steps:
+      - name: Sparse checkout
+        shell: bash
+        env:
+          CHECKOUT_SHA: ${{ github.sha }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${CHECKOUT_SHA}"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=@t3tools/mobile... --filter=@t3tools/scripts...
+          save-pnpm-store: ${{ needs.prepare.outputs.mac_arm64 != 'true' && needs.prepare.outputs.mac_x64 != 'true' }}
+
+      - name: Cache CocoaPods
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/CocoaPods
+          key: lunacode-ios-pods-${{ hashFiles('apps/mobile/package.json', 'apps/mobile/app.config.ts', 'apps/mobile/plugins/**', 'apps/mobile/modules/**', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            lunacode-ios-pods-
+
+      - name: Prebuild and install iOS CocoaPods
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/mobile
+          vp exec expo prebuild --clean --platform ios --no-install
+          printf 'export NODE_BINARY=%q\n' "$(command -v node)" > ios/.xcode.env.local
+          cd ios
+          pod install
+
+      - name: Build unsigned Release IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          mobile_version="$(cd apps/mobile && vp exec expo config --type public --json | jq -r '.version')"
+          xcrun xcodebuild \
+            -workspace apps/mobile/ios/LunaCode.xcworkspace \
+            -scheme LunaCode \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/ios-release-build" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build
+
+          app_path="$RUNNER_TEMP/ios-release-build/Build/Products/Release-iphoneos/LunaCode.app"
+          test -d "$app_path"
+          test -f "$app_path/main.jsbundle"
+
+          mkdir -p "$RUNNER_TEMP/ipa-stage/Payload" release-ios
+          ditto "$app_path" "$RUNNER_TEMP/ipa-stage/Payload/LunaCode.app"
+          (cd "$RUNNER_TEMP/ipa-stage" && zip -qry "$GITHUB_WORKSPACE/release-ios/LunaCode-mobile-${mobile_version}-ios-unsigned.ipa" Payload)
+
+      - name: Upload iOS IPA
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lunacode-mobile-ios-ipa
+          path: release-ios/*.ipa
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    name: Collect & Publish Release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    needs:
+      - prepare
+      - desktop_mac_arm64
+      - desktop_mac_x64
+      - desktop_linux_x64
+      - desktop_win_x64
+      - mobile_android_apk
+      - mobile_ios_ipa
+    if: ${{ always() && needs.prepare.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+    steps:
+      - name: Sparse checkout
+        if: needs.prepare.outputs.publish_release == 'true'
+        shell: bash
+        env:
+          CHECKOUT_SHA: ${{ github.sha }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${CHECKOUT_SHA}"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+
+      - name: Download built artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: lunacode-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Verify artifacts and write SHA256SUMS
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(release-assets/*)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "::error::No release artifacts were downloaded."
+            exit 1
+          fi
+          (cd release-assets && sha256sum -- * > SHA256SUMS)
+          {
+            echo "### LunaCode v${{ needs.prepare.outputs.version }} Build Artifacts"
+            echo '```'
+            cat release-assets/SHA256SUMS
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload combined release bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lunacode-release-bundle
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Write release notes
+        if: needs.prepare.outputs.publish_release == 'true'
+        shell: bash
+        run: |
+          cat > release-notes.md <<'EOF'
+          ### LunaCode Installation Notes
+
+          - **macOS (`.dmg` / `.zip`)**: Unsigned builds trigger Gatekeeper on first launch. After moving `LunaCode.app` to `/Applications`, strip quarantine or sign locally with `.claude/skills/lunacode-mac-dmg`:
+            ```bash
+            xattr -cr /Applications/LunaCode.app
+            ```
+          - **Linux (`.AppImage` / `.deb`)**: Run `chmod +x LunaCode-*.AppImage` or install with `sudo apt install ./LunaCode-*.deb`.
+          - **Windows (`.exe`)**: NSIS installer (SmartScreen prompt is expected while unsigned).
+          - **Android (`.apk`)**: Sideload `LunaCode-mobile-*-arm64-v8a-release.apk`.
+          - **iOS (`.ipa`)**: Unsigned sideload-ready IPA (`com.nidao003.lunacode.mobile`). Install via AltStore, SideStore, Sideloadly (re-signing with your Apple ID), or TrollStore.
+
+          Verify downloads against `SHA256SUMS`.
+
+          ---
+          EOF
+
+      - name: Publish GitHub Release
+        if: needs.prepare.outputs.publish_release == 'true'
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: LunaCode v${{ needs.prepare.outputs.version }}
+          body_path: release-notes.md
+          generate_release_notes: true
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
+          make_latest: ${{ needs.prepare.outputs.prerelease == 'true' && 'false' || 'true' }}
+          files: release-assets/*
+          fail_on_unmatched_files: true
+          token: ${{ github.token }}
