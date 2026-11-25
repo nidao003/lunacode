@@ -11,13 +11,9 @@ export interface LunaMobileThreadContextProps {
   readonly telemetry: LunaContextTelemetry;
   readonly providerDriver: ProviderDriverKind | null;
   readonly isCompacting: boolean;
-  readonly threadTitle: string | null;
-  readonly latestAssistantText: string | null;
   readonly onCompactContext: (instructions?: string) => void;
   readonly onBuildHandoff: () => DeterministicHandoffResult;
   readonly onOpenHandoffThread: (markdown: string) => void;
-  readonly getCurrentPrompt: () => string;
-  readonly onAppendToPrompt: (tailMarkdown: string) => void;
 }
 
 export function subscriptionTierBadgeClasses(tone: SubscriptionTierTone): {

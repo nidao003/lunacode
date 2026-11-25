@@ -667,10 +667,6 @@
       "types": "./src/lunacode/handoffBuilder.ts",
       "default": "./src/lunacode/handoffBuilder.ts"
     },
-    "./lunacode/open-viking": {
-      "types": "./src/lunacode/openVikingClient.ts",
-      "default": "./src/lunacode/openVikingClient.ts"
-    },
     "./lunacode/usage-limits-view": {
       "types": "./src/lunacode/usageLimitsView.logic.ts",
       "default": "./src/lunacode/usageLimitsView.logic.ts"

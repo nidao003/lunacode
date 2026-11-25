@@ -142,7 +142,6 @@ import {
 import {
   createNewTaskDraft,
   flushComposerDrafts,
-  getComposerDraftSnapshot,
   setComposerDraftText,
 } from "../../state/use-composer-drafts";
 import type { LunaMobileThreadContextProps } from "../../lunacode/styles";
@@ -1080,24 +1079,10 @@ function ThreadRouteContent(
           activeProviderThreadId: activeProviderThread?.id,
         });
 
-        let latestAssistantText: string | null = null;
-        for (let index = selectedThreadDetail.messages.length - 1; index >= 0; index -= 1) {
-          const message = selectedThreadDetail.messages[index];
-          if (message && message.role === "assistant" && message.text.trim().length > 0) {
-            latestAssistantText = message.text;
-            break;
-          }
-        }
-
-        const getCurrentPrompt = () =>
-          composer.composerDraftKey ? getComposerDraftSnapshot(composer.composerDraftKey).text : "";
-
         return {
           telemetry,
           providerDriver,
           isCompacting: composer.isCompacting,
-          threadTitle: selectedThread.title,
-          latestAssistantText,
           onCompactContext: (instructions?: string) => {
             void composer.onSendCommand(
               providerDriver === "claudeAgent" && instructions?.trim()
@@ -1135,14 +1120,6 @@ function ThreadRouteContent(
                 },
               },
             });
-          },
-          getCurrentPrompt,
-          onAppendToPrompt: (tailMarkdown: string) => {
-            const current = getCurrentPrompt();
-            const trimmedEnd = current.trimEnd();
-            composer.onChangeDraftMessage(
-              trimmedEnd.length > 0 ? `${trimmedEnd}\n\n${tailMarkdown}` : tailMarkdown,
-            );
           },
         };
       })()

@@ -495,8 +495,6 @@ export interface ChatComposerProps {
   lunaProviderDriver?: ProviderDriverKind | null | undefined;
   onBuildLunaHandoff?: (() => DeterministicHandoffResult) | undefined;
   onOpenLunaHandoffThread?: ((markdown: string) => void) | undefined;
-  lunaThreadTitle?: string | null | undefined;
-  lunaLatestAssistantText?: string | null | undefined;
 }
 
 const NO_PROVIDER_SKILLS: ServerProvider["skills"] = [];
@@ -593,8 +591,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     lunaProviderDriver = null,
     onBuildLunaHandoff,
     onOpenLunaHandoffThread,
-    lunaThreadTitle = null,
-    lunaLatestAssistantText = null,
   } = props;
   const {
     activePendingProgress: incomingPendingProgress,
@@ -3870,17 +3866,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       onCompactContext={onCompactContext}
                       onBuildHandoff={onBuildLunaHandoff}
                       onOpenHandoffThread={onOpenLunaHandoffThread}
-                      getCurrentPrompt={() => promptRef.current}
-                      onAppendToPrompt={(tailMarkdown) => {
-                        const current = promptRef.current;
-                        const next =
-                          current.trim().length > 0
-                            ? `${current.trimEnd()}\n\n${tailMarkdown}`
-                            : tailMarkdown;
-                        setPrompt(next);
-                      }}
-                      threadTitle={lunaThreadTitle}
-                      latestAssistantText={lunaLatestAssistantText}
                     />
                   ) : null}
                   <ComposerFooterPrimaryActions

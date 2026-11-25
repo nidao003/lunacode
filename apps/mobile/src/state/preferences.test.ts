@@ -260,12 +260,6 @@ describe("mobile preferences state", () => {
             modelAlertThresholdsK: { "claude-sonnet-4-6": 120 },
             compactTemplateEnabled: true,
             compactTemplateText: "保留关键结论",
-            openViking: {
-              baseUrl: "http://192.168.3.160:1933",
-              apiKey: "",
-              maxChars: 1600,
-              minScore: 0.3,
-            },
             customLanHost: "",
           },
         }),

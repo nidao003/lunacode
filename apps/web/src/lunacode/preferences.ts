@@ -1,18 +1,12 @@
 import {
   DEFAULT_COMPACT_TEMPLATE_TEXT,
   DEFAULT_LUNA_PREFERENCES,
-  type LunaOpenVikingConfig,
   type LunaPreferences,
   sanitizeLunaPreferences,
 } from "@t3tools/client-runtime/lunacode/preferences";
 import { useSyncExternalStore } from "react";
 
-export {
-  DEFAULT_COMPACT_TEMPLATE_TEXT,
-  DEFAULT_LUNA_PREFERENCES,
-  type LunaOpenVikingConfig,
-  type LunaPreferences,
-};
+export { DEFAULT_COMPACT_TEMPLATE_TEXT, type LunaPreferences };
 
 const LUNA_PREFERENCES_STORAGE_KEY = "lunacode.preferences.v1";
 const LUNA_PREFERENCES_EVENT = "lunacode:preferences-updated";

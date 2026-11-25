@@ -1,9 +1,4 @@
-import {
-  DEFAULT_COMPACT_TEMPLATE_TEXT,
-  DEFAULT_LUNA_PREFERENCES,
-} from "@t3tools/client-runtime/lunacode/preferences";
-import { checkOpenVikingHealth } from "@t3tools/client-runtime/lunacode/open-viking";
-import { useState } from "react";
+import { DEFAULT_COMPACT_TEMPLATE_TEXT } from "@t3tools/client-runtime/lunacode/preferences";
 import { Pressable, TextInput, View } from "react-native";
 
 import { AppText as Text } from "../components/ui/AppText";
@@ -13,163 +8,17 @@ import { useLunaMobilePreferences } from "./useLunaMobilePreferences";
 
 export function LunaMobileSettingsSection() {
   const [preferences, updatePreferences] = useLunaMobilePreferences();
-  const [healthState, setHealthState] = useState<{
-    readonly ok: boolean;
-    readonly text: string;
-  } | null>(null);
-  const [testingHealth, setTestingHealth] = useState(false);
-
-  const handleTestViking = async () => {
-    setTestingHealth(true);
-    setHealthState({ ok: true, text: "正在测试连接..." });
-    const res = await checkOpenVikingHealth(preferences.openViking);
-    setHealthState({ ok: res.ok, text: res.detail });
-    setTestingHealth(false);
-  };
 
   return (
     <View className="gap-6">
       <SettingsSection
         title="LunaCode · OpenViking 云端记忆"
-        footer="按需手动检索与沉淀，结果仅附加到用户消息尾部以保护 Prefix Cache，绝不在后台静默消耗 Token。"
+        footer="记忆由各 Agent CLI 的 OpenViking 插件提供（自动召回与沉淀）；连接地址、API Key 与召回阈值统一在 ~/.openviking/ovcli.conf 维护。"
       >
-        <View className="gap-3.5 p-4">
-          <View className="gap-1.5">
-            <Text className="text-xs font-t3-medium text-foreground-muted">
-              服务地址 (Base URL)
-            </Text>
-            <TextInput
-              accessibilityLabel="OpenViking 服务地址"
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-              value={preferences.openViking.baseUrl}
-              onChangeText={(value) =>
-                updatePreferences((curr) => ({
-                  ...curr,
-                  openViking: {
-                    ...curr.openViking,
-                    baseUrl: value,
-                  },
-                }))
-              }
-              placeholder="http://192.168.3.160:1933"
-              placeholderTextColorClassName="accent-foreground-muted"
-              className="rounded-xl border border-border-subtle bg-input px-3 py-2 font-mono text-sm text-foreground"
-            />
-          </View>
-
-          <View className="gap-1.5">
-            <Text className="text-xs font-t3-medium text-foreground-muted">
-              X-API-Key（开启鉴权时填写，可选）
-            </Text>
-            <TextInput
-              accessibilityLabel="OpenViking API Key"
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-              value={preferences.openViking.apiKey}
-              onChangeText={(value) =>
-                updatePreferences((curr) => ({
-                  ...curr,
-                  openViking: {
-                    ...curr.openViking,
-                    apiKey: value,
-                  },
-                }))
-              }
-              placeholder="可选"
-              placeholderTextColorClassName="accent-foreground-muted"
-              className="rounded-xl border border-border-subtle bg-input px-3 py-2 font-mono text-sm text-foreground"
-            />
-          </View>
-
-          <View className="flex-row gap-3">
-            <View className="flex-1 gap-1.5">
-              <Text className="text-xs font-t3-medium text-foreground-muted">
-                尾部注入上限 (400-8000)
-              </Text>
-              <TextInput
-                accessibilityLabel="尾部单次注入字符上限"
-                keyboardType="number-pad"
-                value={String(preferences.openViking.maxChars)}
-                onChangeText={(value) => {
-                  const parsed = Number.parseInt(value, 10);
-                  if (Number.isFinite(parsed)) {
-                    updatePreferences((curr) => ({
-                      ...curr,
-                      openViking: { ...curr.openViking, maxChars: parsed },
-                    }));
-                  }
-                }}
-                className="rounded-xl border border-border-subtle bg-input px-3 py-2 font-mono text-sm tabular-nums text-foreground"
-              />
-            </View>
-
-            <View className="flex-1 gap-1.5">
-              <Text className="text-xs font-t3-medium text-foreground-muted">最小相关度 (0-1)</Text>
-              <TextInput
-                accessibilityLabel="检索最小相关性分数"
-                keyboardType="decimal-pad"
-                value={String(preferences.openViking.minScore)}
-                onChangeText={(value) => {
-                  const parsed = Number.parseFloat(value);
-                  if (Number.isFinite(parsed)) {
-                    updatePreferences((curr) => ({
-                      ...curr,
-                      openViking: { ...curr.openViking, minScore: parsed },
-                    }));
-                  }
-                }}
-                className="rounded-xl border border-border-subtle bg-input px-3 py-2 font-mono text-sm tabular-nums text-foreground"
-              />
-            </View>
-          </View>
-
-          <View className="flex-row flex-wrap items-center gap-2 pt-1">
-            <Pressable
-              accessibilityRole="button"
-              disabled={testingHealth}
-              onPress={() => void handleTestViking()}
-              className="min-h-10 items-center justify-center rounded-full border border-border bg-secondary px-4 active:opacity-70 disabled:opacity-50"
-            >
-              <Text className="text-xs font-t3-medium text-foreground">
-                {testingHealth ? "测试中..." : "测试连接"}
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() =>
-                updatePreferences((curr) => ({
-                  ...curr,
-                  openViking: DEFAULT_LUNA_PREFERENCES.openViking,
-                }))
-              }
-              className="min-h-10 items-center justify-center rounded-full bg-subtle px-4 active:opacity-70"
-            >
-              <Text className="text-xs font-t3-medium text-foreground-muted">恢复默认</Text>
-            </Pressable>
-          </View>
-
-          {healthState ? (
-            <View
-              className={
-                healthState.ok
-                  ? "rounded-xl border border-border-subtle bg-adaptive-emerald-500-a12-a16 px-3 py-2"
-                  : "rounded-xl border border-danger-border bg-danger px-3 py-2"
-              }
-            >
-              <Text
-                className={
-                  healthState.ok
-                    ? "text-xs text-adaptive-emerald-700-300"
-                    : "text-xs text-danger-foreground"
-                }
-              >
-                {healthState.text}
-              </Text>
-            </View>
-          ) : null}
+        <View className="gap-2 p-4">
+          <Text className="text-xs text-foreground-muted">
+            LunaCode 不再内置独立客户端，避免同一服务上的参数漂移与重复注入。
+          </Text>
         </View>
       </SettingsSection>
 

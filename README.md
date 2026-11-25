@@ -63,10 +63,10 @@ All custom capabilities are tracked in the [Customizations Ledger](./AGENTS.fork
 - **Per-account quota cards & tier badges:** Splits pooled limits into per-account cards with upstream subscription tier badges, remaining quota pills, and sibling-account comparisons inside the model picker and thread sidebar on both Web/Desktop and Mobile.
 - **Kimi Code quota integration:** Compliant credential/quota reader (`~/.kimi-code/credentials/kimi-code.json`, `/me`, `/usages`) with POSIX file-lock coordination, Windows read-only protection, a 5-minute in-memory TTL cache, and `turn.agent_busy` single-turn steering/retry protection.
 
-### 6. OpenViking Cloud Memory Light Integration — Web & Mobile (`LUNA-008`)
+### 6. OpenViking Cloud Memory — Delegated to Agent Plugins (`LUNA-008`, retired)
 
-- **Explicit on-demand recall & save:** Connect a self-hosted OpenViking memory endpoint from Settings, search/recall memories manually, or save thread takeaways in one click.
-- **Prefix-cache friendly injection:** Retrieved memory snippets are capped and appended to the end of the current user message only when explicitly triggered—never injected into the System Prompt header or fetched silently in the background.
+- Memory recall and capture are provided by each agent CLI's own OpenViking plugin (Claude Code, Codex, OpenCode, Pi, Cursor), configured once in `~/.openviking/ovcli.conf`.
+- LunaCode ships no separate memory client, so the same server is not queried twice with different endpoints, thresholds, and injection paths.
 
 ### 7. LAN `.local` mDNS Discovery & Custom Domain Pairing (`LUNA-010`)
 

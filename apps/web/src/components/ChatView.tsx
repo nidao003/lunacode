@@ -3151,10 +3151,6 @@ export default function ChatView(props: ChatViewProps) {
   const sendPreviewAnnotationStable = useStableCallback(sendPreviewAnnotation);
   const onComposerResumeStable = useStableCallback(onResume);
   const onComposerCompactContextStable = useStableCallback(onCompactContext);
-  const lunaLatestAssistantText =
-    [...(serverProjection?.messages ?? [])]
-      .reverse()
-      .find((msg) => msg.role === "assistant" && msg.text.trim().length > 0)?.text ?? null;
   const onBuildLunaHandoff = () =>
     buildDeterministicHandoff({
       threadTitle: activeThread?.title ?? null,
@@ -3925,8 +3921,6 @@ export default function ChatView(props: ChatViewProps) {
                                 onOpenLunaHandoffThread={
                                   activeProject ? onOpenLunaHandoffThreadStable : undefined
                                 }
-                                lunaThreadTitle={activeThread?.title ?? null}
-                                lunaLatestAssistantText={lunaLatestAssistantText}
                                 onSend={onComposerSendStable}
                                 onResume={onComposerResumeStable}
                                 onInterrupt={onInterruptStable}

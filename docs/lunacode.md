@@ -2,7 +2,7 @@
 
 > **Upstream attribution:** **LunaCode** ([`nidao003/lunacode`](https://github.com/nidao003/lunacode)) is an open-source fork of [**T3 Code (`pingdotgg/t3code`)**](https://github.com/pingdotgg/t3code) by T3 Tools Inc. (MIT License).
 
-LunaCode preserves upstream T3 Code's multi-provider orchestration engine, remote architecture, and `~/.t3/userdata` database schema while adding privacy-by-default telemetry settings, official-ToS-compliant quota/account tooling, cross-surface context & cache observability, OpenViking memory integration, LAN `.local` mDNS pairing, and Antigravity media/session hardening.
+LunaCode preserves upstream T3 Code's multi-provider orchestration engine, remote architecture, and `~/.t3/userdata` database schema while adding privacy-by-default telemetry settings, official-ToS-compliant quota/account tooling, cross-surface context & cache observability, OpenViking memory delegated to agent plugins, LAN `.local` mDNS pairing, and Antigravity media/session hardening.
 
 ---
 
@@ -49,11 +49,10 @@ Core algorithms are shared in `packages/client-runtime/src/lunacode/` and render
 - **Per-account quota cards & comparisons:** Displays per-account quota windows, upstream subscription tier badges, and sibling-account remaining-quota comparisons in the model picker and thread details on Web, Desktop, and Mobile.
 - **Kimi Code account & quota reader:** Reads `{KIMI_CODE_HOME:-~/.kimi-code}/credentials/kimi-code.json` (`/me` and `/usages`) using POSIX `oauth/<name>.lock` coordination (read-only on Windows), a 5-minute in-memory TTL cache, and `turn.agent_busy` single-turn steering/retry protection.
 
-### OpenViking Cloud Memory Light Integration (`LUNA-008`)
+### OpenViking Cloud Memory — Delegated to Agent Plugins (`LUNA-008`, retired)
 
-- Configure an OpenViking endpoint in Settings on Web/Desktop or Mobile.
-- Manually search and recall memories, or save key context to memory on demand.
-- Recalled memories are length-capped and appended only to the **tail** of your current user message to preserve Prompt Prefix Cache hit rates—never injected automatically or placed in the System Prompt header.
+- Memory recall and capture come from each agent CLI's own OpenViking plugin, configured once in `~/.openviking/ovcli.conf`.
+- LunaCode no longer ships an in-app memory client: running a second client against the same server meant a different search endpoint, a threshold that never filtered, and duplicate injection on every turn.
 
 ### LAN `.local` mDNS Discovery & Custom Domain Pairing (`LUNA-010`)
 

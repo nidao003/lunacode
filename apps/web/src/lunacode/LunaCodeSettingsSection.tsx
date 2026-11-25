@@ -2,12 +2,7 @@ import { useState, useSyncExternalStore } from "react";
 import { SettingsGroup } from "~/components/settings/SettingsGroup";
 import { SettingsSection } from "~/components/settings/settingsLayout";
 import { Button } from "~/components/ui/button";
-import { checkOpenVikingHealth } from "./openVikingClient";
-import {
-  DEFAULT_COMPACT_TEMPLATE_TEXT,
-  DEFAULT_LUNA_PREFERENCES,
-  useLunaPreferences,
-} from "./preferences";
+import { DEFAULT_COMPACT_TEMPLATE_TEXT, useLunaPreferences } from "./preferences";
 
 export interface LunaRtkStatus {
   readonly installed: boolean;
@@ -105,19 +100,9 @@ function useRtkStatus(): RtkStoreSnapshot {
 export function LunaCodeSettingsSection() {
   const [preferences, updatePreferences] = useLunaPreferences();
   const rtk = useRtkStatus();
-  const [healthState, setHealthState] = useState<{
-    readonly ok: boolean;
-    readonly text: string;
-  } | null>(null);
   const [rtkBusy, setRtkBusy] = useState(false);
   const [rtkFeedback, setRtkFeedback] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-
-  const handleTestViking = async () => {
-    setHealthState({ ok: true, text: "正在测试连接..." });
-    const res = await checkOpenVikingHealth(preferences.openViking);
-    setHealthState({ ok: res.ok, text: res.detail });
-  };
 
   const handleInitRtk = async () => {
     const bridge = getLunaDesktopBridge();
@@ -149,121 +134,18 @@ export function LunaCodeSettingsSection() {
 
   return (
     <SettingsSection id="lunacode" title="LunaCode 定制能力">
-      {/* OpenViking 云端记忆配置 */}
+      {/* OpenViking 云端记忆：由 Agent 原生插件提供，LunaCode 不再自带客户端 */}
       <SettingsGroup>
-        <div className="space-y-3 p-4 text-xs">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <div className="text-sm font-medium text-foreground">OpenViking 云端记忆</div>
-              <p className="mt-0.5 text-muted-foreground">
-                按需手动检索与沉淀，注入消息尾部保护 Prefix Cache，绝不在后台静默消耗 Token。
-              </p>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Button size="xs" variant="outline" onClick={() => void handleTestViking()}>
-                测试连接
-              </Button>
-              <Button
-                size="xs"
-                variant="ghost-muted"
-                onClick={() =>
-                  updatePreferences((curr) => ({
-                    ...curr,
-                    openViking: DEFAULT_LUNA_PREFERENCES.openViking,
-                  }))
-                }
-              >
-                恢复默认
-              </Button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="space-y-1">
-              <span className="text-muted-foreground">服务地址 (Base URL)</span>
-              <input
-                type="text"
-                value={preferences.openViking.baseUrl}
-                onChange={(event) =>
-                  updatePreferences((curr) => ({
-                    ...curr,
-                    openViking: {
-                      ...curr.openViking,
-                      baseUrl: event.target.value,
-                    },
-                  }))
-                }
-                className="h-8 w-full rounded-md border border-border bg-background px-2.5 font-mono text-xs text-foreground outline-none focus:border-ring"
-              />
-            </label>
-
-            <label className="space-y-1">
-              <span className="text-muted-foreground">X-API-Key（开启鉴权时填写）</span>
-              <input
-                type="password"
-                placeholder="可选"
-                value={preferences.openViking.apiKey}
-                onChange={(event) =>
-                  updatePreferences((curr) => ({
-                    ...curr,
-                    openViking: {
-                      ...curr.openViking,
-                      apiKey: event.target.value,
-                    },
-                  }))
-                }
-                className="h-8 w-full rounded-md border border-border bg-background px-2.5 font-mono text-xs text-foreground outline-none focus:border-ring"
-              />
-            </label>
-
-            <label className="space-y-1">
-              <span className="text-muted-foreground">尾部单次注入字符上限 (400 - 8000)</span>
-              <input
-                type="number"
-                min={400}
-                max={8000}
-                step={200}
-                value={preferences.openViking.maxChars}
-                onChange={(event) => {
-                  const val = Number.parseInt(event.target.value, 10);
-                  if (Number.isFinite(val)) {
-                    updatePreferences((curr) => ({
-                      ...curr,
-                      openViking: { ...curr.openViking, maxChars: val },
-                    }));
-                  }
-                }}
-                className="h-8 w-full rounded-md border border-border bg-background px-2.5 font-mono text-xs text-foreground outline-none focus:border-ring tabular-nums"
-              />
-            </label>
-
-            <label className="space-y-1">
-              <span className="text-muted-foreground">检索最小相关性分数 (0 - 1)</span>
-              <input
-                type="number"
-                min={0}
-                max={1}
-                step={0.05}
-                value={preferences.openViking.minScore}
-                onChange={(event) => {
-                  const val = Number.parseFloat(event.target.value);
-                  if (Number.isFinite(val)) {
-                    updatePreferences((curr) => ({
-                      ...curr,
-                      openViking: { ...curr.openViking, minScore: val },
-                    }));
-                  }
-                }}
-                className="h-8 w-full rounded-md border border-border bg-background px-2.5 font-mono text-xs text-foreground outline-none focus:border-ring tabular-nums"
-              />
-            </label>
-          </div>
-
-          {healthState ? (
-            <p className={healthState.ok ? "text-success" : "text-destructive"}>
-              {healthState.text}
-            </p>
-          ) : null}
+        <div className="space-y-2 p-4 text-xs">
+          <div className="text-sm font-medium text-foreground">OpenViking 云端记忆</div>
+          <p className="text-muted-foreground">
+            记忆由各 Agent CLI 的 OpenViking 插件提供（自动召回与沉淀），LunaCode
+            不再内置独立客户端，避免同一服务上的参数漂移与重复注入。
+          </p>
+          <p className="text-muted-foreground">
+            连接地址、API Key 与召回阈值统一在{" "}
+            <span className="font-mono text-foreground">~/.openviking/ovcli.conf</span> 中维护。
+          </p>
         </div>
       </SettingsGroup>
 

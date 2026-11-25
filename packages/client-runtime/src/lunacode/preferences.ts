@@ -1,15 +1,7 @@
-export interface LunaOpenVikingConfig {
-  readonly baseUrl: string;
-  readonly apiKey: string;
-  readonly maxChars: number;
-  readonly minScore: number;
-}
-
 export interface LunaPreferences {
   readonly modelAlertThresholdsK: Readonly<Record<string, number>>;
   readonly compactTemplateEnabled: boolean;
   readonly compactTemplateText: string;
-  readonly openViking: LunaOpenVikingConfig;
   readonly customLanHost: string;
 }
 
@@ -20,12 +12,6 @@ export const DEFAULT_LUNA_PREFERENCES: LunaPreferences = {
   modelAlertThresholdsK: {},
   compactTemplateEnabled: false,
   compactTemplateText: DEFAULT_COMPACT_TEMPLATE_TEXT,
-  openViking: {
-    baseUrl: "http://192.168.3.160:1933",
-    apiKey: "",
-    maxChars: 2400,
-    minScore: 0.25,
-  },
   customLanHost: "",
 };
 
@@ -58,45 +44,12 @@ export function sanitizeLunaPreferences(raw: unknown): LunaPreferences {
       ? obj.compactTemplateText.trim().slice(0, 300)
       : DEFAULT_LUNA_PREFERENCES.compactTemplateText;
 
-  const rawViking =
-    typeof obj.openViking === "object" && obj.openViking !== null && !Array.isArray(obj.openViking)
-      ? (obj.openViking as Record<string, unknown>)
-      : {};
-
-  const baseUrl =
-    typeof rawViking.baseUrl === "string" && rawViking.baseUrl.trim().length > 0
-      ? rawViking.baseUrl.trim().replace(/\/+$/, "")
-      : DEFAULT_LUNA_PREFERENCES.openViking.baseUrl;
-
-  const apiKey = typeof rawViking.apiKey === "string" ? rawViking.apiKey.trim() : "";
-
-  const maxChars =
-    typeof rawViking.maxChars === "number" &&
-    Number.isFinite(rawViking.maxChars) &&
-    rawViking.maxChars >= 400
-      ? Math.min(8000, Math.round(rawViking.maxChars))
-      : DEFAULT_LUNA_PREFERENCES.openViking.maxChars;
-
-  const minScore =
-    typeof rawViking.minScore === "number" &&
-    Number.isFinite(rawViking.minScore) &&
-    rawViking.minScore >= 0 &&
-    rawViking.minScore <= 1
-      ? Number(rawViking.minScore.toFixed(2))
-      : DEFAULT_LUNA_PREFERENCES.openViking.minScore;
-
   const customLanHost = typeof obj.customLanHost === "string" ? obj.customLanHost.trim() : "";
 
   return {
     modelAlertThresholdsK: thresholds,
     compactTemplateEnabled,
     compactTemplateText,
-    openViking: {
-      baseUrl,
-      apiKey,
-      maxChars,
-      minScore,
-    },
     customLanHost,
   };
 }

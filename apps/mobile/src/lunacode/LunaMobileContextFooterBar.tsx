@@ -10,7 +10,6 @@ import { AppText as Text } from "../components/ui/AppText";
 import { useVisibleSecondClock } from "../features/threads/use-visible-second-clock";
 import { useNowMinuteMs } from "../lib/clock";
 import { LunaMobileContextInspectorModal } from "./LunaMobileContextInspectorModal";
-import { LunaMobileMemoryModal } from "./LunaMobileMemoryModal";
 import type { LunaMobileThreadContextProps } from "./styles";
 import { useLunaMobilePreferences } from "./useLunaMobilePreferences";
 
@@ -22,7 +21,6 @@ export function LunaMobileContextFooterBar(props: {
   const { context } = props;
   const { telemetry, providerDriver, isCompacting } = context;
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [memoryOpen, setMemoryOpen] = useState(false);
   const [preferences] = useLunaMobilePreferences();
 
   const expiresAtMs = telemetry.promptCacheExpiresAtMs;
@@ -127,15 +125,6 @@ export function LunaMobileContextFooterBar(props: {
         </Text>
       </Pressable>
 
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="打开 OpenViking 云端记忆"
-        onPress={() => setMemoryOpen(true)}
-        className="shrink-0 rounded-full border border-border-subtle bg-grouped-card px-2.5 py-1 active:opacity-75"
-      >
-        <Text className="text-3xs font-t3-medium text-foreground">记忆</Text>
-      </Pressable>
-
       <LunaMobileContextInspectorModal
         visible={inspectorOpen}
         onClose={() => setInspectorOpen(false)}
@@ -147,16 +136,6 @@ export function LunaMobileContextFooterBar(props: {
         onCompactContext={context.onCompactContext}
         onBuildHandoff={context.onBuildHandoff}
         onOpenHandoffThread={context.onOpenHandoffThread}
-      />
-
-      <LunaMobileMemoryModal
-        visible={memoryOpen}
-        onClose={() => setMemoryOpen(false)}
-        getCurrentPrompt={context.getCurrentPrompt}
-        onAppendToPrompt={context.onAppendToPrompt}
-        defaultTitle={context.threadTitle}
-        latestAssistantText={context.latestAssistantText}
-        onBuildHandoff={context.onBuildHandoff}
       />
     </View>
   );

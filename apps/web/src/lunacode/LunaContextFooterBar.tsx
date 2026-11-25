@@ -2,7 +2,6 @@ import type { ProviderDriverKind } from "@t3tools/contracts";
 import { useState, useSyncExternalStore } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { LunaContextInspectorDialog } from "./LunaContextInspectorDialog";
-import { LunaMemoryDialog } from "./LunaMemoryDialog";
 import {
   type LunaContextTelemetry,
   formatCountdownClock,
@@ -44,10 +43,6 @@ interface LunaContextFooterBarProps {
   readonly onCompactContext: (instructions?: string) => void;
   readonly onBuildHandoff?: (() => DeterministicHandoffResult) | undefined;
   readonly onOpenHandoffThread?: ((markdown: string) => void) | undefined;
-  readonly getCurrentPrompt?: (() => string) | undefined;
-  readonly onAppendToPrompt?: ((tailMarkdown: string) => void) | undefined;
-  readonly threadTitle?: string | null | undefined;
-  readonly latestAssistantText?: string | null | undefined;
 }
 
 export function LunaContextFooterBar({
@@ -57,13 +52,8 @@ export function LunaContextFooterBar({
   onCompactContext,
   onBuildHandoff,
   onOpenHandoffThread,
-  getCurrentPrompt,
-  onAppendToPrompt,
-  threadTitle,
-  latestAssistantText,
 }: LunaContextFooterBarProps) {
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [memoryOpen, setMemoryOpen] = useState(false);
   const [preferences] = useLunaPreferences();
   const expiresAtMs = telemetry.promptCacheExpiresAtMs;
   const nowMs = useLunaCacheClock(expiresAtMs, inspectorOpen);
@@ -156,21 +146,6 @@ export function LunaContextFooterBar({
         <TooltipPopup>{compactTooltip}</TooltipPopup>
       </Tooltip>
 
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              onClick={() => setMemoryOpen(true)}
-              className="inline-flex h-6 shrink-0 cursor-pointer items-center rounded-md border border-border/70 bg-background/60 px-2 text-2xs font-medium text-foreground transition-colors hover:bg-accent"
-            />
-          }
-        >
-          记忆
-        </TooltipTrigger>
-        <TooltipPopup>OpenViking 云端记忆按需检索与结论沉淀</TooltipPopup>
-      </Tooltip>
-
       <LunaContextInspectorDialog
         open={inspectorOpen}
         onOpenChange={setInspectorOpen}
@@ -182,16 +157,6 @@ export function LunaContextFooterBar({
         onCompactContext={onCompactContext}
         onBuildHandoff={onBuildHandoff}
         onOpenHandoffThread={onOpenHandoffThread}
-      />
-
-      <LunaMemoryDialog
-        open={memoryOpen}
-        onOpenChange={setMemoryOpen}
-        getCurrentPrompt={getCurrentPrompt}
-        onAppendToPrompt={onAppendToPrompt}
-        defaultTitle={threadTitle}
-        latestAssistantText={latestAssistantText}
-        onBuildHandoff={onBuildHandoff}
       />
     </div>
   );
