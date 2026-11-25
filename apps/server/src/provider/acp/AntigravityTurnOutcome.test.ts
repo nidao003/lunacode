@@ -14,6 +14,7 @@ const USER_INPUT = 14;
 const PLANNER_RESPONSE = 15;
 const TOOL = 8;
 const ERROR_MESSAGE = 17;
+const SYSTEM_MESSAGE = 101;
 
 // Error-step payloads trimmed from Antigravity 1.4.5 against a local Gemini endpoint.
 const errorPayload = (error: string) =>
@@ -40,6 +41,15 @@ const MISSING_SIGNATURE_ERROR = errorPayload(
 const INVALID_SIGNATURE_ERROR = errorPayload(
   'Error 400, Message: {"type":"error","error":{"type":"invalid_request_error","message":"messages.3.content.0: Invalid `signature` in `thinking` block"}}, Status: INVALID_ARGUMENT, Details: []',
 );
+const INVALID_MEDIA_ERROR = errorPayload(
+  "Error 400, Message: Unable to process input: the file or media data is empty, corrupted, or malformed., Status: INVALID_ARGUMENT, Details: []",
+);
+const STATUS_INVALID_MEDIA_ERROR = Buffer.concat([
+  Buffer.from([0x12, 0x62]),
+  Buffer.from(
+    "INVALID_ARGUMENT (code 400): Unable to process input: the file or media data is empty, corrupted, or malformed.\u001a\u0020HTTP 400 Bad Request",
+  ),
+]);
 const NOT_FOUND_ERROR = errorPayload(
   "Error 404, Message: Requested entity was not found., Status: NOT_FOUND, Details: []",
 );
@@ -186,6 +196,24 @@ describe("watchAntigravityPromptOutcome", () => {
         assert.equal(outcome?.failure.code, "INVALID_THINKING_SIGNATURE");
         assert.equal(outcome?.threadDisposition, "broken");
       }
+      // Empty, corrupted, or Apple CgBI media stored in native history breaks every later prompt,
+      // and a trailing system notice must not mask that error step.
+      for (const error of [INVALID_MEDIA_ERROR, STATUS_INVALID_MEDIA_ERROR]) {
+        const outcome = yield* turn([
+          [USER_INPUT, input],
+          [ERROR_MESSAGE, error],
+        ]);
+        assert.equal(outcome?.failure.code, "INVALID_MEDIA_INPUT");
+        assert.equal(outcome?.failure.retryable, true);
+        assert.equal(outcome?.threadDisposition, "broken");
+      }
+      const maskedMediaOutcome = yield* turn([
+        [USER_INPUT, input],
+        [ERROR_MESSAGE, STATUS_INVALID_MEDIA_ERROR],
+        [SYSTEM_MESSAGE, Buffer.from("Background reminder")],
+      ]);
+      assert.equal(maskedMediaOutcome?.failure.code, "INVALID_MEDIA_INPUT");
+      assert.equal(maskedMediaOutcome?.threadDisposition, "broken");
       // A completed tool keeps its usage, and the turn still fails.
       assert.equal(
         (yield* turn(

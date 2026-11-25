@@ -24,7 +24,6 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
-import { HttpClient } from "effect/http";
 import * as AcpErrors from "effect-acp/errors";
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
@@ -68,6 +67,7 @@ import {
 import { makeAcpNativeLoggerFactory } from "@t3tools/provider-acp/server/nativeLogging";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeAntigravityProvider } from "../AntigravityProvider.ts";
+import { makeAntigravityQuotaCache } from "../antigravityQuotaCache.ts";
 import { makeAntigravityUsageProbe } from "../antigravityUsageLimits.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
@@ -107,7 +107,6 @@ export type AntigravityDriverEnv =
   | Digest.Digest
   | SecureRandom.SecureRandom
   | FileSystem.FileSystem
-  | HttpClient.HttpClient
   | IdAllocator.IdAllocatorV2
   | McpProviderSessions.McpProviderSessions
   | ModelCatalog.ModelCatalog
@@ -135,7 +134,6 @@ export const AntigravityDriver: ProviderDriver<
     const digest = yield* Digest.Digest;
     const random = yield* SecureRandom.SecureRandom;
     const fileSystem = yield* FileSystem.FileSystem;
-    const httpClient = yield* HttpClient.HttpClient;
     const path = yield* Path.Path;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const host = yield* ProviderHost.ProviderHost;
@@ -559,24 +557,44 @@ export const AntigravityDriver: ProviderDriver<
     const usage = yield* makeAntigravityUsageProbe({
       profileDirectory,
       authMethod: auth.authMethod,
+      resolveExecutable: installation.resolve(settings.binaryPath, processEnvironment).pipe(
+        Effect.map((executable) => executable.executablePath),
+        Effect.orElseSucceed(() => undefined),
+      ),
+      baseEnv: processEnvironment,
     }).pipe(
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, path),
-      Effect.provideService(Digest.Digest, digest),
-      Effect.provideService(HttpClient.HttpClient, httpClient),
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
     );
+    // Keep last good quota on disk so an offline/expired manual refresh still surfaces the last
+    // known bars flagged as cached instead of leaving the card blank.
+    const quotaCache = yield* makeAntigravityQuotaCache({
+      stateDir: host.paths.stateDir,
+      instanceId,
+    });
+    const probeUsage = Effect.gen(function* () {
+      const probed = yield* usage.probe;
+      if (probed.unavailable) return yield* quotaCache.recover(probed, undefined);
+      yield* quotaCache.persist(probed, undefined, undefined);
+      return probed;
+    });
     const provider = yield* makeAntigravityProvider(settings, {
       environment: processEnvironment,
       stampIdentity: classifyModels,
       probe,
-      probeUsage: usage.probe,
-      clearUsage: usage.clear,
+      probeUsage,
+      readCachedUsage: quotaCache.hydrate(),
+      clearUsage: usage.clear.pipe(Effect.andThen(quotaCache.clear())),
       auth: { type: auth.authMethod, label: antigravityAuthLabel(auth.authMethod) },
-      supportsTextGeneration: isAntigravityTextGenerationAvailable(profileDirectory).pipe(
-        Effect.provideService(FileSystem.FileSystem, fileSystem),
-        Effect.provideService(Path.Path, path),
-        Effect.orElseSucceed(() => false),
-      ),
+      supportsTextGeneration:
+        auth.authMethod === "oauth-personal"
+          ? Effect.succeed(false)
+          : isAntigravityTextGenerationAvailable(profileDirectory).pipe(
+              Effect.provideService(FileSystem.FileSystem, fileSystem),
+              Effect.provideService(Path.Path, path),
+              Effect.orElseSucceed(() => false),
+            ),
     }).pipe(
       Effect.mapError(
         (cause) =>
@@ -601,6 +619,7 @@ export const AntigravityDriver: ProviderDriver<
         ),
       ),
       profileDirectory,
+      authMethod: auth.authMethod,
       onSessionStarted: (started, cwd) =>
         provider.onSessionStarted(started, cwd).pipe(Effect.andThen(authFlow.onSignedInElsewhere)),
       onSessionEvent: (event, cwd) => {
@@ -621,6 +640,7 @@ export const AntigravityDriver: ProviderDriver<
     });
     const textGeneration = yield* makeAntigravityTextGeneration({
       profileDirectory,
+      authMethod: auth.authMethod,
       defaultModel,
       withProcess: authFlow.withProcess,
       makeRuntime: (cwd) =>

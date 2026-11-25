@@ -69,8 +69,6 @@ function compareVersions(left: ReadonlyArray<number>, right: ReadonlyArray<numbe
   return 0;
 }
 
-// `agy acp` 1.5.1 offers every model to every ACP client; older runtimes allowlist editors.
-const OPEN_MODEL_ACCESS_RELEASE = [1, 5, 1] as const;
 // `agy acp` 1.5.0 steers a running turn with the next prompt; the 1.4 harness queues it.
 const PROMPT_STEERING_RELEASE = [1, 5, 0] as const;
 
@@ -101,12 +99,8 @@ export function antigravitySessionMeta(
     : undefined;
 }
 
-/** Older releases offer non-Gemini models only to allowlisted clients such as Zed. */
-export function antigravityClientInfo(version: string | null | undefined) {
-  const parsed = parseAntigravityVersion(version);
-  return parsed !== undefined && compareVersions(parsed, OPEN_MODEL_ACCESS_RELEASE) >= 0
-    ? { name: "t3-code", title: "T3 Code", version: packageJson.version }
-    : { name: "zed", version: "0.0.0" };
+export function antigravityClientInfo(_version?: string | null) {
+  return { name: "t3-code", title: "T3 Code", version: packageJson.version };
 }
 
 export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(function* (
@@ -373,6 +367,53 @@ const TEXT_FILE_EXTENSIONS = new Set([
 ]);
 const ANTIGRAVITY_MAX_TEXT_ATTACHMENT_BYTES = 1024 * 1024;
 const MAX_TOTAL_ATTACHMENT_BYTES = PROVIDER_SEND_TURN_MAX_FILE_BYTES;
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;
+
+function validateAntigravityMediaBytes(
+  bytes: Uint8Array,
+  mimeType: string,
+  name: string,
+): string | undefined {
+  if (bytes.length === 0) {
+    return `Attachment '${name}' is empty and cannot be sent to Antigravity.`;
+  }
+  switch (mimeType) {
+    case "image/png": {
+      const hasSignature =
+        bytes.length >= 24 && PNG_SIGNATURE.every((byte, index) => bytes[index] === byte);
+      if (!hasSignature) {
+        return `Image '${name}' is corrupted or not a valid PNG image.`;
+      }
+      // Xcode actool/pngcrush injects a proprietary CgBI chunk before IHDR inside .app bundles.
+      if (bytes[12] === 0x43 && bytes[13] === 0x67 && bytes[14] === 0x42 && bytes[15] === 0x49) {
+        return `Image '${name}' uses Apple's non-standard CgBI PNG format (commonly extracted from iOS app bundles), which Antigravity rejects. Re-export it as a standard PNG before attaching.`;
+      }
+      return undefined;
+    }
+    case "image/jpeg":
+      return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+        ? undefined
+        : `Image '${name}' is corrupted or not a valid JPEG image.`;
+    case "image/webp":
+      return bytes.length >= 12 &&
+        bytes[0] === 0x52 &&
+        bytes[1] === 0x49 &&
+        bytes[2] === 0x46 &&
+        bytes[3] === 0x46 &&
+        bytes[8] === 0x57 &&
+        bytes[9] === 0x45 &&
+        bytes[10] === 0x42 &&
+        bytes[11] === 0x50
+        ? undefined
+        : `Image '${name}' is corrupted or not a valid WebP image.`;
+    case "image/bmp":
+      return bytes.length >= 2 && bytes[0] === 0x42 && bytes[1] === 0x4d
+        ? undefined
+        : `Image '${name}' is corrupted or not a valid BMP image.`;
+    default:
+      return undefined;
+  }
+}
 
 export const buildAntigravityPrompt = Effect.fn("buildAntigravityPrompt")(function* (input: {
   readonly input: ProviderSendTurnInput["input"];
@@ -480,6 +521,12 @@ export const buildAntigravityPrompt = Effect.fn("buildAntigravityPrompt")(functi
       return yield* EffectAcpErrors.AcpRequestError.invalidParams(
         `Attachment '${attachment.name}' changed while being read and is too large.`,
       );
+    }
+    if (image || audio) {
+      const mediaError = validateAntigravityMediaBytes(bytes, mimeType, attachment.name);
+      if (mediaError !== undefined) {
+        return yield* EffectAcpErrors.AcpRequestError.invalidParams(mediaError);
+      }
     }
     if (image) {
       blocks.push({ type: "image", data: Buffer.from(bytes).toString("base64"), mimeType });

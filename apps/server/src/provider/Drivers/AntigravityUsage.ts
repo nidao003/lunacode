@@ -41,19 +41,14 @@ const make = Effect.gen(function* () {
   const dataRoots = Effect.fn("AntigravityUsage.dataRoots")(function* (
     environment: NodeJS.ProcessEnv,
   ) {
-    const home = yield* HostProcess.HomeDirectory;
     const configured = environment["ANTIGRAVITY_DATA_DIR"]
       ?.split(",")
       .map((value) => value.trim())
       .filter(Boolean);
-    const defaults = [
-      ...["antigravity", "antigravity-cli", "antigravity-ide", "antigravity-backup"].map((name) =>
-        path.join(home, ".gemini", name),
-      ),
-      path.join(home, ".config", "antigravity"),
-    ];
+    if (!configured?.length) return [];
+    const home = yield* HostProcess.HomeDirectory;
     const canonical = new Set<string>();
-    for (const root of configured?.length ? configured : defaults) {
+    for (const root of configured) {
       const resolved = path.resolve(expandHomePath(root, home));
       canonical.add(
         yield* fileSystem.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved)),

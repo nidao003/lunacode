@@ -533,11 +533,21 @@ export const OpenCodeDriver: ProviderDriver<
       },
       { concurrency: "unbounded" },
     ).pipe(
-      Effect.map(({ provider, usageLimits, installedVersion }) => ({
-        ...provider,
-        usageLimits,
-        ...(installedVersion === undefined ? {} : { installedVersion }),
-      })),
+      Effect.map(({ provider, usageLimits, installedVersion }) => {
+        const hasOpenCodeGoLimits =
+          usageLimits.unavailable === undefined &&
+          usageLimits.windows.some((window) => window.id.startsWith("go_"));
+        const auth =
+          hasOpenCodeGoLimits && provider.auth.status !== "unauthenticated" && !provider.auth.label
+            ? { ...provider.auth, label: "OpenCode Go" }
+            : provider.auth;
+        return {
+          ...provider,
+          auth,
+          usageLimits,
+          ...(installedVersion === undefined ? {} : { installedVersion }),
+        };
+      }),
       Effect.map(stampIdentity),
       Effect.provideService(OpenCodeServerOwner.OpenCodeServerOwner, serverOwner),
       Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, openCodeRuntime),

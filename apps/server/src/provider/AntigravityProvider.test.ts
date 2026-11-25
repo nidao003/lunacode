@@ -138,6 +138,7 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
     readonly enabled?: boolean;
     readonly safe?: boolean;
     readonly probeUsage?: Effect.Effect<ServerProviderUsageLimits>;
+    readonly readCachedUsage?: Effect.Effect<ServerProviderUsageLimits | undefined>;
   } = {},
 ) {
   const initialProbe = yield* Deferred.make<EffectAcpSchema.InitializeResponse, ProbeError>();
@@ -153,6 +154,7 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
       stampIdentity: (snapshot) => Effect.succeed({ ...snapshot, instanceId, driver }),
       ...(options.auth ? { auth: options.auth } : {}),
       ...(options.probeUsage ? { probeUsage: options.probeUsage } : {}),
+      ...(options.readCachedUsage ? { readCachedUsage: options.readCachedUsage } : {}),
       probe: Ref.update(probeCalls, (count) => count + 1).pipe(
         Effect.andThen(Ref.get(probe)),
         Effect.flatten,
@@ -716,7 +718,7 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
   );
 
   it.effect(
-    "publishes limits, retains a successful read on failure, and clears them on sign-out",
+    "hydrates cached limits on startup without probing, probes only on manual refresh, and clears on sign-out",
     () =>
       Effect.gen(function* () {
         const limits: ServerProviderUsageLimits = {
@@ -730,35 +732,55 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
             },
           ],
         };
+        const probeCount = yield* Ref.make(0);
         const usage = yield* Ref.make(limits);
-        const harness = yield* makeHarness({ probeUsage: Ref.get(usage) });
-        const published = yield* harness.nextPublish((snapshot) => !!snapshot.usageLimits);
+        const cached = yield* Ref.make<ServerProviderUsageLimits | undefined>(limits);
+        const harness = yield* makeHarness({
+          probeUsage: Ref.update(probeCount, (n) => n + 1).pipe(Effect.andThen(Ref.get(usage))),
+          readCachedUsage: Ref.get(cached),
+        });
         yield* harness.initialize;
-        expect((yield* published)?.usageLimits).toEqual(limits);
-        // The second health check is the one the failed background read triggers.
-        const checks = yield* Ref.make(0);
-        const failedReadApplied = yield* Deferred.make<void>();
-        yield* Ref.set(
-          harness.probe,
-          Ref.updateAndGet(checks, (count) => count + 1).pipe(
-            Effect.tap((count) =>
-              count === 2 ? Deferred.succeed(failedReadApplied, undefined) : Effect.void,
-            ),
-            Effect.as(initializeResult),
-          ),
-        );
-        yield* Ref.set(usage, {
+        expect(yield* Ref.get(probeCount)).toBe(0);
+        expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(limits);
+
+        // `snapshot.refreshUsage` (per-turn background refresh) is a compliance no-op.
+        yield* harness.provider.snapshot.refreshUsage!;
+        expect(yield* Ref.get(probeCount)).toBe(0);
+
+        yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
+        const newLimits: ServerProviderUsageLimits = {
           checkedAt: "2026-10-09T12:01:00.000Z",
+          windows: [
+            {
+              id: "3p-weekly",
+              kind: "weekly",
+              label: "Claude & GPT (shared) · Weekly",
+              usedPercent: 80,
+            },
+          ],
+        };
+        yield* Ref.set(usage, newLimits);
+        yield* harness.provider.snapshot.refresh;
+        yield* harness.provider.snapshot.awaitUsageRefresh;
+        expect(yield* Ref.get(probeCount)).toBe(1);
+        expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(newLimits);
+
+        // A failed manual refresh keeps the last good bars and flags itself as cached data.
+        yield* Ref.set(usage, {
+          checkedAt: "2026-10-09T12:02:00.000Z",
           windows: [],
           unavailable: { reason: "probeFailed" },
         });
         yield* harness.provider.snapshot.refresh;
-        yield* Deferred.await(failedReadApplied);
-        expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(limits);
+        yield* harness.provider.snapshot.awaitUsageRefresh;
+        expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual({
+          ...newLimits,
+          unavailable: { reason: "probeFailed" },
+        });
         yield* harness.provider.onSignedOut;
         expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toBeUndefined();
         yield* Ref.set(usage, {
-          checkedAt: "2026-10-09T12:02:00.000Z",
+          checkedAt: "2026-10-09T12:03:00.000Z",
           windows: [],
           unavailable: { reason: "unsupported" },
         });
@@ -768,6 +790,37 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
         yield* harness.provider.snapshot.refresh;
         expect((yield* unsupported)?.usageLimits?.windows).toEqual([]);
       }),
+  );
+
+  it.effect("prompts manual refresh when startup cache is empty and probes on refresh", () =>
+    Effect.gen(function* () {
+      const probeCount = yield* Ref.make(0);
+      const harness = yield* makeHarness({
+        probeUsage: Ref.update(probeCount, (n) => n + 1).pipe(
+          Effect.as({
+            checkedAt: "2026-10-09T12:00:00.000Z",
+            windows: [
+              { id: "gemini-5h", kind: "session", label: "Gemini · 5-hour", usedPercent: 10 },
+            ],
+          } satisfies ServerProviderUsageLimits),
+        ),
+        readCachedUsage: Effect.undefined,
+      });
+      yield* harness.initialize;
+      expect(yield* Ref.get(probeCount)).toBe(0);
+      expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual({
+        checkedAt: expect.any(String),
+        windows: [],
+        unavailable: {
+          reason: "probeFailed",
+          message: "Click Refresh to check Antigravity limits via the official agy CLI.",
+        },
+      });
+      yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
+      yield* harness.provider.snapshot.refresh;
+      yield* harness.provider.snapshot.awaitUsageRefresh;
+      expect(yield* Ref.get(probeCount)).toBe(1);
+    }),
   );
 
   it.effect("a quota read finishing after sign-out cannot restore account limits", () =>
@@ -796,7 +849,7 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
     }),
   );
 
-  it.effect("reports ready and starts sessions while one shared quota read is pending", () =>
+  it.effect("reports ready and starts sessions without triggering automatic quota reads", () =>
     Effect.gen(function* () {
       const reads = yield* Ref.make(0);
       const readStarted = yield* Deferred.make<void>();
@@ -807,21 +860,24 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
           Effect.andThen(Deferred.await(readResult)),
         ),
       });
-      const published = yield* harness.nextPublish((snapshot) => !!snapshot.usageLimits);
       yield* harness.initialize;
+      yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
+      const refresh = yield* harness.provider.snapshot.refresh.pipe(Effect.forkChild);
       yield* Deferred.await(readStarted);
       yield* harness.provider.onSessionStarted(started, "/workspace");
       yield* harness.provider.onSessionStarted(started, "/other");
       const ready = yield* harness.provider.snapshot.getSnapshot;
       expect(ready).toMatchObject({ status: "ready", auth: { status: "authenticated" } });
-      expect(ready.usageLimits).toBeUndefined();
+      expect(ready.usageLimits?.windows).toEqual([]);
       expect(yield* Ref.get(reads)).toBe(1);
       const limits = {
         checkedAt: "2026-10-09T12:00:00.000Z",
         windows: [{ id: "gemini-5h", kind: "session", label: "Gemini · 5-hour", usedPercent: 10 }],
       } satisfies ServerProviderUsageLimits;
       yield* Deferred.succeed(readResult, limits);
-      expect((yield* published)?.usageLimits).toEqual(limits);
+      yield* Fiber.join(refresh);
+      yield* harness.provider.snapshot.awaitUsageRefresh;
+      expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(limits);
     }),
   );
 
@@ -836,13 +892,18 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
         Deferred.succeed(oldReadStarted, undefined).pipe(Effect.andThen(Effect.never)),
       );
       const harness = yield* makeHarness({ probeUsage: Ref.get(usage).pipe(Effect.flatten) });
-      const published = yield* harness.nextPublish((snapshot) => !!snapshot.usageLimits);
       yield* harness.initialize;
+      yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
+      const oldRefresh = yield* harness.provider.snapshot.refresh.pipe(Effect.forkChild);
       yield* Deferred.await(oldReadStarted);
       yield* Ref.set(usage, Effect.succeed(newLimits));
       yield* harness.provider.onSignedIn;
+      yield* Fiber.join(oldRefresh).pipe(Effect.ignore);
       yield* harness.provider.onSessionStarted(started);
-      expect((yield* published)?.usageLimits).toEqual(newLimits);
+      expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toBeUndefined();
+      yield* harness.provider.snapshot.refresh;
+      yield* harness.provider.snapshot.awaitUsageRefresh;
+      expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(newLimits);
       // Switching again must not republish the previous account's limits, even if the read fails.
       const failed = {
         checkedAt: "2026-10-09T12:02:00.000Z",
@@ -850,13 +911,11 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
         unavailable: { reason: "probeFailed" },
       } satisfies ServerProviderUsageLimits;
       yield* Ref.set(usage, Effect.succeed(failed));
-      const republished = yield* harness.nextPublish(
-        (snapshot) => snapshot.usageLimits?.unavailable?.reason === "probeFailed",
-      );
       yield* harness.provider.onSignedIn;
       expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toBeUndefined();
-      yield* harness.provider.onSessionStarted(started);
-      expect((yield* republished)?.usageLimits).toEqual(failed);
+      yield* harness.provider.snapshot.refresh;
+      yield* harness.provider.snapshot.awaitUsageRefresh;
+      expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(failed);
     }),
   );
 });

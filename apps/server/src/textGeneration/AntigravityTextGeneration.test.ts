@@ -64,6 +64,7 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
     readonly startupSkills?: boolean;
     readonly initialModel?: string;
     readonly rejectThinkingUpdate?: boolean;
+    readonly authMethod?: "oauth-personal" | "gemini-api-key" | "agent-platform";
   } = {},
 ) {
   const fs = yield* FileSystem.FileSystem;
@@ -292,6 +293,7 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
 
   const textGeneration = yield* makeAntigravityTextGeneration({
     profileDirectory,
+    ...(options.authMethod ? { authMethod: options.authMethod } : {}),
     makeRuntime,
     withProcess,
   });
@@ -681,6 +683,19 @@ it.layer(NodeServices.layer)("AntigravityTextGeneration", (it) => {
       expect(fixture.state.prompts).toEqual([]);
       expect(yield* fixture.fs.readFileString(`${fixture.sessionBase}.db`)).toBe("helper session");
       expect(fixture.state.closed).toEqual(fixture.state.workspaces);
+    }),
+  );
+
+  it.effect("rejects background text generation for personal Google subscriptions", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture({ authMethod: "oauth-personal" });
+      const error = yield* fixture.textGeneration
+        .generateThreadTitle(fixture.titleInput)
+        .pipe(Effect.flip);
+      expect(error._tag).toBe("TextGenerationError");
+      expect(error.detail).toContain("personal Google subscriptions");
+      expect(fixture.state.workspaces).toEqual([]);
+      yield* fixture.assertCleaned;
     }),
   );
 

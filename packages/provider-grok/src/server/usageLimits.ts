@@ -25,6 +25,41 @@ const GrokCredentials = Schema.Record(
 );
 const decodeCredentials = Schema.decodeEffect(Schema.fromJsonString(GrokCredentials));
 export const GROK_USAGE_URL = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
+export const GROK_SETTINGS_URL = "https://cli-chat-proxy.grok.com/v1/settings";
+const GrokSettingsTierFields = {
+  subscription_tier_display: Schema.optional(Schema.NullOr(Schema.String)),
+  subscription_tier: Schema.optional(Schema.NullOr(Schema.String)),
+};
+const GrokSettingsResponse = Schema.Struct({
+  ...GrokSettingsTierFields,
+  settings: Schema.optional(Schema.NullOr(Schema.Struct(GrokSettingsTierFields))),
+});
+const decodeGrokSettingsOption = Schema.decodeUnknownOption(GrokSettingsResponse);
+
+export function parseGrokPlan(response: unknown): string | undefined {
+  const parsed = decodeGrokSettingsOption(response);
+  if (Option.isNone(parsed)) return undefined;
+  const { settings } = parsed.value;
+  const pick = (key: "subscription_tier_display" | "subscription_tier"): string | undefined => {
+    const nested = settings?.[key]?.trim();
+    if (nested) return nested;
+    const top = parsed.value[key]?.trim();
+    return top || undefined;
+  };
+  const display = pick("subscription_tier_display");
+  if (display) return display;
+  const raw = pick("subscription_tier");
+  if (!raw) return undefined;
+  const letters = raw.replace(/[^a-zA-Z]/g, "").toLowerCase();
+  if (letters === "supergrokheavy" || letters === "heavy") return "SuperGrok Heavy";
+  if (letters === "supergrok") return "SuperGrok";
+  const titled = raw
+    .split(/[\s_-]+/)
+    .filter((word) => word.length > 0)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+  return titled || undefined;
+}
 export const GrokUsageResponse = Schema.Struct({
   config: Schema.optional(
     Schema.Struct({
@@ -176,29 +211,47 @@ export const readGrokAccount = Effect.fn("readGrokAccount")(function* (
   if (!token) {
     return { email, usageLimits: makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" }) };
   }
-  const usageLimits = yield* Effect.gen(function* () {
-    const client = yield* HttpClient.HttpClient;
-    const response = yield* client.execute(
-      HttpClientRequest.get(GROK_USAGE_URL).pipe(HttpClientRequest.bearerToken(token)),
-    );
-    if (response.status === 403) {
-      const { error } = yield* HttpClientResponse.schemaBodyJson(GrokErrorResponse)(response);
-      // xAI refuses Grok Build while the account's privacy setting is a legacy mode.
-      if (error.includes("WKE=privacy-mode:")) {
-        return makeUnavailableUsageLimits({
-          checkedAt,
-          reason: "probeFailed",
-          message: "Switch your xAI account to Privacy Mode to show Grok usage limits.",
-        });
-      }
-    }
-    const body = yield* HttpClientResponse.schemaBodyJson(GrokUsageResponse)(
-      yield* HttpClientResponse.filterStatusOk(response),
-    );
-    return grokUsageResponseToLimits(body, checkedAt);
-  }).pipe(
-    Effect.timeout("10 seconds"),
-    Effect.orElseSucceed(() => probeFailed),
+  const [usageLimits, planLabel] = yield* Effect.all(
+    [
+      Effect.gen(function* () {
+        const client = yield* HttpClient.HttpClient;
+        const response = yield* client.execute(
+          HttpClientRequest.get(GROK_USAGE_URL).pipe(HttpClientRequest.bearerToken(token)),
+        );
+        if (response.status === 403) {
+          const { error } = yield* HttpClientResponse.schemaBodyJson(GrokErrorResponse)(response);
+          // xAI refuses Grok Build while the account's privacy setting is a legacy mode.
+          if (error.includes("WKE=privacy-mode:")) {
+            return makeUnavailableUsageLimits({
+              checkedAt,
+              reason: "probeFailed",
+              message: "Switch your xAI account to Privacy Mode to show Grok usage limits.",
+            });
+          }
+        }
+        const body = yield* HttpClientResponse.schemaBodyJson(GrokUsageResponse)(
+          yield* HttpClientResponse.filterStatusOk(response),
+        );
+        return grokUsageResponseToLimits(body, checkedAt);
+      }).pipe(
+        Effect.timeout("10 seconds"),
+        Effect.orElseSucceed(() => probeFailed),
+      ),
+      Effect.gen(function* () {
+        const client = yield* HttpClient.HttpClient;
+        const response = yield* client.execute(
+          HttpClientRequest.get(GROK_SETTINGS_URL).pipe(HttpClientRequest.bearerToken(token)),
+        );
+        const body = yield* HttpClientResponse.filterStatusOk(response).pipe(
+          Effect.flatMap((ok) => ok.json),
+        );
+        return parseGrokPlan(body);
+      }).pipe(
+        Effect.timeout("10 seconds"),
+        Effect.orElseSucceed(() => undefined),
+      ),
+    ],
+    { concurrency: "unbounded" },
   );
-  return { email, usageLimits };
+  return { email, planLabel, usageLimits };
 });

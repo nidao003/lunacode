@@ -12,7 +12,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as HttpClient from "effect/http/HttpClient";
 import { cursorRateModel } from "./accountUsage.ts";
-import { readCursorUsageLimits } from "./usageLimits.ts";
+import { readCursorAccountUsage } from "./usageLimits.ts";
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { makeCursorTextGeneration } from "./textGeneration.ts";
@@ -237,10 +237,16 @@ export const CursorDriver: ProviderDriver<
                 snapshot.auth.status === "authenticated"
               ),
             (snapshot) =>
-              readCursorUsageLimits(effectiveConfig, {
+              readCursorAccountUsage(effectiveConfig, {
                 ...processEnv,
                 CURSOR_API_KEY: apiKey,
-              }).pipe(Effect.map((usageLimits) => ({ ...snapshot, usageLimits }))),
+              }).pipe(
+                Effect.map(({ usageLimits, planLabel }) => ({
+                  ...snapshot,
+                  ...(planLabel ? { auth: { ...snapshot.auth, label: planLabel } } : {}),
+                  usageLimits,
+                })),
+              ),
           ),
         ),
       ),

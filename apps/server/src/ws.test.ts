@@ -1448,6 +1448,7 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
           Stream.tap(() => Queue.offer(pulled, undefined)),
         ),
         refresh: () => Effect.sync(() => registryProviders),
+        awaitUsageRefresh: Effect.void,
         refreshWorkspaceSnapshot: () => Effect.sync(() => registryProviders),
       }),
       Layer.mock(ProjectService.ProjectService)({

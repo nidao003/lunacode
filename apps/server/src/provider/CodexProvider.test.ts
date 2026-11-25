@@ -14,6 +14,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   applyPreferredCodexDefaultModel,
   codexCustomEndpoint,
+  codexPlanLabel,
   codexRoutesSpendNativeQuota,
   makeCodexSkillsProbe,
   mapCodexModelCapabilities,
@@ -339,4 +340,12 @@ it("reports native quota only for an OpenAI login on a native route", () => {
   );
   assert.strictEqual(codexCustomEndpoint({ openai_base_url: "https://chatgpt.com/x" }), undefined);
   assert.strictEqual(codexCustomEndpoint({}), undefined);
+});
+
+it("formats ChatGPT edu tiers and unknown non-empty plan types", () => {
+  assert.strictEqual(codexPlanLabel("edu"), "ChatGPT Edu Subscription");
+  assert.strictEqual(codexPlanLabel("edu_plus"), "ChatGPT Edu Plus Subscription");
+  assert.strictEqual(codexPlanLabel("edu_pro"), "ChatGPT Edu Pro Subscription");
+  assert.strictEqual(codexPlanLabel("starter_tier"), "ChatGPT Starter Tier Subscription");
+  assert.strictEqual(codexPlanLabel("unknown"), "ChatGPT Subscription");
 });

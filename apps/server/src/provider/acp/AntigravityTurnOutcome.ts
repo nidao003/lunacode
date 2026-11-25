@@ -17,6 +17,8 @@ import { antigravityManagedPath, antigravityProfileRoot } from "./AntigravityPro
 const ERROR_STEP_TYPE = 17;
 // CORTEX_STEP_TYPE_PLANNER_RESPONSE: the model answered within this turn.
 const PLANNER_RESPONSE_STEP_TYPE = 15;
+// CORTEX_STEP_TYPE_SYSTEM_MESSAGE: trailing system notices/reminders must not mask an error step.
+const SYSTEM_MESSAGE_STEP_TYPE = 101;
 // The harness error text leads the payload; a Go stack trace follows it.
 const MAX_ERROR_PAYLOAD_BYTES = 16_384;
 // The Go harness's rendering of a Google API error, as the agent's api_errors.py reads it.
@@ -28,6 +30,9 @@ const QUOTA_EXHAUSTED = /\breason:QUOTA_EXHAUSTED\b/;
 // history, so every later prompt to that session fails the same way.
 const INVALID_THINKING_SIGNATURE =
   /\bmessages\.\d+\.content\.\d+(?:\.thinking\.signature: Field required|: Invalid `signature` in `thinking` block)/;
+// Empty, corrupted, or Apple CgBI media stored in native history rejects every later prompt and /compact.
+const INVALID_MEDIA_INPUT =
+  /\bUnable to process input: the file or media data is empty, corrupted, or malformed\b/i;
 const RESET_TIMESTAMP = /\bquotaResetTimeStamp:([^\s\]]+)/;
 const RESET_DELAY = /\bquotaResetDelay:((?:\d+(?:\.\d+)?(?:ns|us|µs|μs|ms|h|m|s))+)(?=[\s\]])/;
 // google.rpc.RetryInfo, which plain rate limits carry instead of a quota reset.
@@ -91,9 +96,9 @@ const lastStepAfter =
     const row = database
       .prepare(
         `SELECT step_type AS type, substr(step_payload, 1, ?) AS payload
-         FROM steps WHERE idx > ? ORDER BY idx DESC LIMIT 1`,
+         FROM steps WHERE idx > ? AND step_type != ? ORDER BY idx DESC LIMIT 1`,
       )
-      .get(MAX_ERROR_PAYLOAD_BYTES, index);
+      .get(MAX_ERROR_PAYLOAD_BYTES, index, SYSTEM_MESSAGE_STEP_TYPE);
     if (typeof row?.type !== "number") return undefined;
     const reachedModel =
       database
@@ -164,6 +169,18 @@ function turnFailure(
         message:
           "Antigravity's saved conversation can no longer be sent to the model. The next message starts a fresh Antigravity session with this thread's context.",
         code: "INVALID_THINKING_SIGNATURE",
+        retryable: true,
+      }),
+      threadDisposition: "broken",
+    };
+  }
+  if (INVALID_MEDIA_INPUT.test(text)) {
+    return {
+      failure: makeProviderFailure({
+        class: "provider_error",
+        message:
+          "Antigravity's saved conversation contains unreadable media or file data (such as an empty, corrupted, or Apple CgBI PNG) and can no longer be sent to the model. The next message starts a fresh Antigravity session with this thread's context.",
+        code: "INVALID_MEDIA_INPUT",
         retryable: true,
       }),
       threadDisposition: "broken",

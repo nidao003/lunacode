@@ -52,6 +52,7 @@ import {
   claudeSignedOutMessage,
   hasClaudeManagedMcpConfig,
   makeClaudeEnvironment,
+  resolveClaudeHomePath,
 } from "./Drivers/ClaudeHome.ts";
 import {
   customClaudeApiEndpointHost,
@@ -111,16 +112,43 @@ function toTitleCaseWords(value: string): string {
   return parts.join(" ");
 }
 
-function claudeSubscriptionLabel(subscriptionType: string | undefined): string | undefined {
-  const normalized = subscriptionType?.toLowerCase().replace(/[\s_-]+/g, "");
+const ClaudeCredentialsFile = Schema.Struct({
+  claudeAiOauth: Schema.optional(
+    Schema.Struct({
+      subscriptionType: Schema.optional(Schema.String),
+      rateLimitTier: Schema.optional(Schema.String),
+    }),
+  ),
+});
+const decodeClaudeCredentials = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(ClaudeCredentialsFile),
+);
+
+function claudeRateLimitTierLabel(rateLimitTier: string | undefined): string | undefined {
+  const normalized = rateLimitTier?.toLowerCase().replace(/[\s_-]+/g, "");
   if (!normalized) return undefined;
+  if (normalized.includes("max20x")) return "Max 20x";
+  if (normalized.includes("max5x")) return "Max 5x";
+  if (normalized.includes("enterprise")) return "Enterprise";
+  if (normalized.includes("team")) return "Team";
+  if (normalized.includes("pro")) return "Pro";
+  return undefined;
+}
+
+function claudeSubscriptionLabel(
+  subscriptionType: string | undefined,
+  rateLimitTier?: string | undefined,
+): string | undefined {
+  const tierLabel = claudeRateLimitTierLabel(rateLimitTier);
+  const normalized = subscriptionType?.toLowerCase().replace(/[\s_-]+/g, "");
+  if (!normalized) return tierLabel;
 
   switch (normalized) {
     case "claudemaxsubscription":
     case "claudemax5xsubscription":
-      return "Max";
+      return tierLabel === "Max 20x" || tierLabel === "Max 5x" ? tierLabel : "Max";
     case "claudemax20xsubscription":
-      return "Ultra";
+      return tierLabel === "Max 20x" ? tierLabel : "Ultra";
     case "claudeenterprisesubscription":
       return "Enterprise";
     case "claudeteamsubscription":
@@ -131,10 +159,13 @@ function claudeSubscriptionLabel(subscriptionType: string | undefined): string |
       return "Free";
     case "max":
     case "maxplan":
+      return tierLabel === "Max 20x" || tierLabel === "Max 5x" ? tierLabel : "Max";
     case "max5":
-      return "Max";
+    case "max5x":
+      return "Max 5x";
     case "max20":
-      return "Ultra";
+    case "max20x":
+      return "Max 20x";
     case "enterprise":
       return "Enterprise";
     case "team":
@@ -144,7 +175,7 @@ function claudeSubscriptionLabel(subscriptionType: string | undefined): string |
     case "free":
       return "Free";
     default:
-      return toTitleCaseWords(subscriptionType!);
+      return tierLabel ?? toTitleCaseWords(subscriptionType!);
   }
 }
 
@@ -161,9 +192,12 @@ function normalizeClaudeAuthMethod(authMethod: string | undefined): string | und
   return undefined;
 }
 
-function formatClaudeSubscriptionAuthLabel(subscriptionType: string): string {
-  const subscriptionLabel =
-    claudeSubscriptionLabel(subscriptionType) ?? toTitleCaseWords(subscriptionType);
+export function formatClaudeSubscriptionAuthLabel(
+  subscriptionType: string | undefined,
+  rateLimitTier?: string | undefined,
+): string | undefined {
+  const subscriptionLabel = claudeSubscriptionLabel(subscriptionType, rateLimitTier);
+  if (!subscriptionLabel) return undefined;
   const normalized = subscriptionLabel.toLowerCase().replace(/[\s_-]+/g, "");
 
   if (normalized.startsWith("claude") && normalized.endsWith("subscription")) {
@@ -184,6 +218,7 @@ function hasApiKey(apiKeySource: string | undefined): boolean {
 
 function claudeAuthMetadata(input: {
   readonly subscriptionType: string | undefined;
+  readonly rateLimitTier?: string | undefined;
   readonly authMethod: string | undefined;
   readonly apiKeySource: string | undefined;
 }): { readonly type: string; readonly label: string } | undefined {
@@ -194,15 +229,42 @@ function claudeAuthMetadata(input: {
     };
   }
 
-  if (input.subscriptionType) {
+  const label = formatClaudeSubscriptionAuthLabel(input.subscriptionType, input.rateLimitTier);
+  if (label || input.subscriptionType) {
     return {
-      type: input.subscriptionType,
-      label: formatClaudeSubscriptionAuthLabel(input.subscriptionType),
+      type: input.subscriptionType ?? input.rateLimitTier ?? "subscription",
+      label: label ?? "Claude Subscription",
     };
   }
 
   return undefined;
 }
+
+/**
+ * Reads `~/.claude/.credentials.json` (or `CLAUDE_CONFIG_DIR`) purely via FileSystem to obtain
+ * `rateLimitTier` (e.g. `default_claude_max_5x` / `20x`). Never invokes OS keychain tools.
+ */
+export const readClaudeCredentialsPlan = Effect.fn("readClaudeCredentialsPlan")(function* (
+  claudeSettings: Pick<ClaudeSettings, "homePath">,
+  environment?: NodeJS.ProcessEnv,
+) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const claudeHome = yield* resolveClaudeHomePath(claudeSettings, environment);
+  const credentialsPath = path.join(claudeHome, ".credentials.json");
+  return yield* fileSystem.readFileString(credentialsPath).pipe(
+    Effect.flatMap(decodeClaudeCredentials),
+    Effect.map((parsed) => ({
+      ...(parsed.claudeAiOauth?.subscriptionType?.trim()
+        ? { subscriptionType: parsed.claudeAiOauth.subscriptionType.trim() }
+        : {}),
+      ...(parsed.claudeAiOauth?.rateLimitTier?.trim()
+        ? { rateLimitTier: parsed.claudeAiOauth.rateLimitTier.trim() }
+        : {}),
+    })),
+    Effect.orElseSucceed(() => undefined),
+  );
+});
 
 function apiProviderAuthMetadata(
   apiProvider: string | undefined,
@@ -314,6 +376,7 @@ export type ClaudeCapabilitiesProbe = {
   readonly email: string | undefined;
   readonly workspaceId?: string | undefined;
   readonly subscriptionType: string | undefined;
+  readonly rateLimitTier?: string | undefined;
   readonly tokenSource: string | undefined;
   readonly apiKeySource: string | undefined;
   /** OAuth applies only to firstParty; Bedrock uses external AWS credentials and omits subscription/token fields. */
@@ -498,11 +561,16 @@ const probeClaudeCapabilities = (
   });
   return Effect.gen(function* () {
     const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
-    const executablePath = yield* resolveClaudeSdkExecutablePath(
-      claudeSettings.binaryPath,
-      claudeEnvironment,
+    const [credentialsPlan, executablePath, managedMcpConfig] = yield* Effect.all(
+      [
+        readClaudeCredentialsPlan(claudeSettings, claudeEnvironment).pipe(
+          Effect.orElseSucceed(() => undefined),
+        ),
+        resolveClaudeSdkExecutablePath(claudeSettings.binaryPath, claudeEnvironment),
+        hasClaudeManagedMcpConfig(),
+      ],
+      { concurrency: "unbounded" },
     );
-    const managedMcpConfig = yield* hasClaudeManagedMcpConfig();
     // Workspace probes (no usage) discard models; the machine probe refreshes the shared cache.
     const graceMs = includeStatus
       ? claudeGatewayDiscoveryGraceMs({
@@ -534,7 +602,7 @@ const probeClaudeCapabilities = (
           }),
         });
         const init = await q.initializationResult();
-        return { q, init, graceMs };
+        return { q, init, graceMs, credentialsPlan };
       },
       catch: (cause) => new ClaudeCapabilitiesProbeSdkError({ operation: "initialize", cause }),
     });
@@ -542,7 +610,7 @@ const probeClaudeCapabilities = (
     Effect.timeout(
       resolveProviderProbeTimeoutMs("claude", CAPABILITIES_PROBE_TIMEOUT_MS, environment),
     ),
-    Effect.flatMap(({ q, init, graceMs }) =>
+    Effect.flatMap(({ q, init, graceMs, credentialsPlan }) =>
       Effect.gen(function* () {
         // Usage has its own deadline so a slow optional request cannot discard initialization.
         // Only the rate limits are read, so skip the local transcript scan that fills
@@ -586,6 +654,7 @@ const probeClaudeCapabilities = (
           | {
               readonly email?: string;
               readonly subscriptionType?: string;
+              readonly rateLimitTier?: string;
               readonly tokenSource?: string;
               readonly apiKeySource?: string;
               readonly apiProvider?: string;
@@ -593,7 +662,8 @@ const probeClaudeCapabilities = (
           | undefined;
         return {
           email: account?.email,
-          subscriptionType: account?.subscriptionType,
+          subscriptionType: account?.subscriptionType ?? credentialsPlan?.subscriptionType,
+          rateLimitTier: account?.rateLimitTier ?? credentialsPlan?.rateLimitTier,
           tokenSource: account?.tokenSource,
           apiKeySource: account?.apiKeySource,
           apiProvider: account?.apiProvider,
@@ -864,6 +934,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       : undefined) ??
     claudeAuthMetadata({
       subscriptionType: capabilities.subscriptionType,
+      rateLimitTier: capabilities.rateLimitTier,
       authMethod: capabilities.tokenSource,
       apiKeySource: capabilities.apiKeySource,
     });

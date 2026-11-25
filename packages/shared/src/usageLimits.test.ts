@@ -744,6 +744,27 @@ describe("pools", () => {
     ]);
   });
 
+  it("keeps a card for a failed probe that still carries cached windows", () => {
+    const cached = provider({
+      driver: claude,
+      instanceId: ProviderInstanceId.make("claude"),
+      auth: { status: "authenticated", email: "same@example.com" },
+      usageLimits: {
+        checkedAt,
+        windows: [{ ...window, usedPercent: 40 }],
+        unavailable: { reason: "probeFailed" },
+      },
+    });
+    const [account] = collectLimitAccounts(
+      new Map([
+        [EnvironmentId.make("env-a"), { ...laptop, serverConfig: { providers: [cached] } }],
+      ]),
+    );
+    expect(account?.key).toBe("env-a:claude");
+    expect(account?.limits.windows).toHaveLength(1);
+    expect(account?.limits.unavailable?.reason).toBe("probeFailed");
+  });
+
   it.each([
     [
       "one remote hub under environment-local ids",
@@ -1017,6 +1038,51 @@ describe("pools", () => {
         restoresPercent,
       ]),
     ).toContainEqual(["pro@example.com", 95]);
+  });
+
+  it("weights pooled Claude session quota by 1:20 for Pro vs Max 20x subscriptions", () => {
+    const [pool] = collectLimitPools(
+      collectLimitAccounts(
+        new Map([
+          [
+            EnvironmentId.make("env-a"),
+            {
+              ...laptop,
+              serverConfig: {
+                providers: [],
+                usageLimitSources: [
+                  {
+                    ...source,
+                    accounts: [
+                      ["max20", "Claude Max 20x Subscription", 100],
+                      ["pro", "Claude Pro Subscription", 0],
+                    ].map(([id, plan, usedPercent]) => ({
+                      id: String(id),
+                      email: `${id}@example.com`,
+                      driver: claude,
+                      plan: String(plan),
+                      usageLimits: {
+                        checkedAt,
+                        windows: [{ ...window, id: "five_hour", usedPercent: Number(usedPercent) }],
+                      },
+                    })),
+                  },
+                ],
+              },
+            },
+          ],
+        ]),
+      ),
+      now,
+    );
+    const [pooledSession] = pool?.windows ?? [];
+    expect(pooledSession?.remainingPercent).toBe(5);
+    expect(
+      pooledSession?.resets.map(({ member, restoresPercent }) => [
+        member.account.email,
+        restoresPercent,
+      ]),
+    ).toContainEqual(["max20@example.com", 95]);
   });
 
   it("pools windows by id across accounts and orders resets by when they land", () => {

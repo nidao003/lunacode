@@ -10,6 +10,7 @@ const makeProviderRegistryMock = (
 ): ProviderRegistry.ProviderRegistry["Service"] => ({
   getProviders: Effect.succeed(providers),
   refresh: () => Effect.succeed(providers),
+  awaitUsageRefresh: Effect.void,
   refreshInstance: () => Effect.succeed(providers),
   reloadSecretsAndRefresh: () => Effect.succeed(providers),
   applySecretAndRefresh: () => Effect.succeed(providers),

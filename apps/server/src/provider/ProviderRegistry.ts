@@ -64,6 +64,9 @@ export class ProviderRegistry extends Context.Service<
       provider?: ProviderDriverKind,
     ) => Effect.Effect<ReadonlyArray<ServerProvider>>;
 
+    /** Joins usage probes that `refresh` forked (Antigravity), so a manual refresh can return after fresh limits landed. */
+    readonly awaitUsageRefresh?: Effect.Effect<void>;
+
     /** Unknown instance ids return the cached list without error. */
     readonly refreshInstance: (
       instanceId: ProviderInstanceId,
@@ -317,7 +320,13 @@ const carrySavedAntigravityAccount = (
   }
   const status =
     nextProvider.installed && nextProvider.status === "warning" ? "ready" : nextProvider.status;
-  return { auth: previousProvider.auth, status };
+  // Promote fresh email / subscription tier discovered by local checks onto the saved auth object.
+  const auth = {
+    ...previousProvider.auth,
+    ...(nextProvider.auth.email ? { email: nextProvider.auth.email } : {}),
+    ...(nextProvider.auth.label ? { label: nextProvider.auth.label } : {}),
+  };
+  return { auth, status };
 };
 
 /** One failed check after a ready one is often transient, so its retained catalog stays offered. */
@@ -1325,6 +1334,14 @@ export const layer = Layer.effect(
 
     return {
       getProviders: Ref.get(providersRef),
+      awaitUsageRefresh: Effect.gen(function* () {
+        const instances = yield* instanceRegistry.listInstances;
+        yield* Effect.forEach(
+          instances,
+          (instance) => instance.snapshot.awaitUsageRefresh ?? Effect.void,
+          { concurrency: "unbounded" },
+        );
+      }).pipe(Effect.ignoreCause({ log: true }), Effect.asVoid),
       refresh: (provider?: ProviderDriverKind) =>
         refresh(provider).pipe(Effect.catchCause(recoverRefreshFailure)),
       refreshInstance: (instanceId: ProviderInstanceId) =>

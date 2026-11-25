@@ -301,6 +301,12 @@ function hubIdentity(environmentId: EnvironmentId, source: UsageLimitSourceSnaps
   return endpoint && !local ? endpoint : `${environmentId}:${source.id}`;
 }
 
+/** A failed native probe with cached windows still earns a usage-page card; a bare failure does not. */
+function limitRowNotice(limits: ServerProviderUsageLimits): string | null {
+  if (limits.unavailable?.reason === "probeFailed" && limits.windows.length > 0) return null;
+  return limitsNotice(limits);
+}
+
 export interface LimitAccount {
   readonly key: string;
   readonly driver: ServerProvider["driver"];
@@ -397,7 +403,7 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
   for (const [environmentId, presentation] of presentations) {
     const label = presentation.entry.target.label;
     for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
-      if (!provider.usageLimits || limitsNotice(provider.usageLimits) !== null) continue;
+      if (!provider.usageLimits || limitRowNotice(provider.usageLimits) !== null) continue;
       merge(nativeRowKey(resolveKey, environmentId, provider), {
         key: `${environmentId}:${provider.instanceId}`,
         driver: provider.driver,
@@ -604,7 +610,16 @@ const CODEX_PLAN_CAPACITY: Record<string, number> = {
   "ChatGPT Pro 200 Subscription": 20,
 };
 // Claude's published plan multipliers describe the session allowance only.
-const CLAUDE_SESSION_CAPACITY: Record<string, number> = { Pro: 1, Max: 5, Ultra: 20 };
+const CLAUDE_SESSION_CAPACITY: Record<string, number> = {
+  Pro: 1,
+  "Claude Pro Subscription": 1,
+  Max: 5,
+  "Claude Max Subscription": 5,
+  "Claude Max 5x Subscription": 5,
+  Ultra: 20,
+  "Claude Ultra Subscription": 20,
+  "Claude Max 20x Subscription": 20,
+};
 
 function planCapacity(account: LimitAccount, kind: ServerProviderUsageWindow["kind"]) {
   if (!account.plan) return undefined;

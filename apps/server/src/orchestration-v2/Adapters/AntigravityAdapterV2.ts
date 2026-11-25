@@ -1,4 +1,5 @@
 import {
+  type AntigravityAuthMethod,
   ANTIGRAVITY_DEFAULT_MODEL,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -103,6 +104,7 @@ export interface AntigravityAdapterV2Options {
   readonly continuationRequests?: Parameters<typeof makeAcpAdapterV2>[0]["continuationRequests"];
   /** The agent's GEMINI_HOME. Its session logs show turns that ended on an upstream error. */
   readonly profileDirectory?: string;
+  readonly authMethod?: AntigravityAuthMethod;
 }
 
 /**
@@ -157,7 +159,9 @@ export function makeAntigravityAcpAdapterFlavor(
           options.makeRuntime({
             ...input,
             clientFileReads: true,
-            sessionSystemPromptAppend: PULL_REQUEST_LINKING_INSTRUCTIONS,
+            ...(options.authMethod === "oauth-personal"
+              ? {}
+              : { sessionSystemPromptAppend: PULL_REQUEST_LINKING_INSTRUCTIONS }),
           }),
         )
         .pipe(Effect.provideService(Scope.Scope, scope));

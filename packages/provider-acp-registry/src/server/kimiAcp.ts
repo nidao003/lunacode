@@ -9,6 +9,9 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import type * as EffectAcpSchema from "effect-acp/compat";
 
+/** ACP error code Kimi Code returns when its single-turn slot is occupied. */
+export const KIMI_AGENT_BUSY_CODE = "turn.agent_busy";
+
 const NATIVE_SESSION_ID = /^[\w-]+$/;
 const READ_CHUNK_BYTES = 65_536;
 
@@ -98,7 +101,9 @@ export const makeKimiPromptOutcomeWatch = Effect.fn("KimiTurnOutcome.make")(func
           const chunks: Array<Uint8Array> = [];
           let position = offset;
           while (true) {
-            const chunk = yield* file.readAlloc(READ_CHUNK_BYTES, { position });
+            const chunk = yield* file.readAlloc(READ_CHUNK_BYTES, {
+              position,
+            });
             if (Option.isNone(chunk) || chunk.value.length === 0) break;
             chunks.push(chunk.value);
             position += BigInt(chunk.value.length);

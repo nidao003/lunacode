@@ -60,14 +60,14 @@ function makeModelRuntime(
 
 describe("Antigravity release gates", () => {
   it.each([
-    { version: "1.5.0", ownName: false, advertisedAppend: false },
-    { version: "1.5.1", ownName: true, advertisedAppend: false },
-    { version: "1.5.7", ownName: true, advertisedAppend: true },
-    { version: undefined, ownName: false, advertisedAppend: false },
-    { version: "unknown", ownName: false, advertisedAppend: false },
+    { version: "1.5.0", advertisedAppend: false },
+    { version: "1.5.1", advertisedAppend: false },
+    { version: "1.5.7", advertisedAppend: true },
+    { version: undefined, advertisedAppend: false },
+    { version: "unknown", advertisedAppend: false },
   ])(
-    "$version: advertised system append $advertisedAppend, own client name $ownName",
-    ({ version, ownName, advertisedAppend }) => {
+    "$version: advertised system append $advertisedAppend, always identifies as t3-code",
+    ({ version, advertisedAppend }) => {
       const initialize = {
         protocolVersion: 1,
         ...(advertisedAppend
@@ -84,7 +84,7 @@ describe("Antigravity release gates", () => {
           ? { antigravity: { systemPrompt: { append: "<pull_request_linking/>" } } }
           : undefined,
       );
-      expect(antigravityClientInfo(version).name).toBe(ownName ? "t3-code" : "zed");
+      expect(antigravityClientInfo(version).name).toBe("t3-code");
     },
   );
 });
@@ -676,6 +676,117 @@ it.layer(NodeServices.layer)("buildAntigravityPrompt", (it) => {
         _tag: "AcpRequestError",
         code: -32602,
         errorMessage: "Could not read attachment 'screen.png'.",
+      });
+    }),
+  );
+
+  it.effect("rejects empty PNG image and empty WAV audio attachments before prompting", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeAttachmentFixture();
+      yield* fixture.write(imageAttachment, new Uint8Array());
+      const emptyImageError = yield* buildAntigravityPrompt({
+        input: "Describe this image.",
+        attachments: [imageAttachment],
+        resolveAttachmentPath: fixture.resolve,
+        promptCapabilities: { image: true, audio: true, embeddedContext: true },
+      }).pipe(Effect.flip);
+      expect(emptyImageError).toMatchObject({
+        _tag: "AcpRequestError",
+        code: -32602,
+        errorMessage: expect.stringContaining("is empty"),
+      });
+
+      const emptyAudioAttachment = {
+        ...textAttachment,
+        id: "empty-audio",
+        name: "empty.wav",
+        mimeType: "audio/wav",
+      } satisfies ChatAttachment;
+      yield* fixture.write(emptyAudioAttachment, new Uint8Array());
+      const emptyAudioError = yield* buildAntigravityPrompt({
+        input: "Transcribe this audio.",
+        attachments: [emptyAudioAttachment],
+        resolveAttachmentPath: fixture.resolve,
+        promptCapabilities: { image: true, audio: true, embeddedContext: true },
+      }).pipe(Effect.flip);
+      expect(emptyAudioError).toMatchObject({
+        _tag: "AcpRequestError",
+        code: -32602,
+        errorMessage: expect.stringContaining("is empty"),
+      });
+    }),
+  );
+
+  it.effect("rejects Apple CgBI PNGs extracted from iOS app bundles before prompting", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeAttachmentFixture();
+      const cgbiPng = new Uint8Array(24);
+      cgbiPng.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+      cgbiPng.set([0x00, 0x00, 0x00, 0x04, 0x43, 0x67, 0x42, 0x49], 8);
+      yield* fixture.write(imageAttachment, cgbiPng);
+
+      const error = yield* buildAntigravityPrompt({
+        input: "Inspect icon.",
+        attachments: [imageAttachment],
+        resolveAttachmentPath: fixture.resolve,
+        promptCapabilities: { image: true, audio: true, embeddedContext: true },
+      }).pipe(Effect.flip);
+
+      expect(error).toMatchObject({
+        _tag: "AcpRequestError",
+        code: -32602,
+        errorMessage: expect.stringContaining("CgBI"),
+      });
+    }),
+  );
+
+  it.effect.each([
+    {
+      name: "bad.png",
+      mimeType: "image/png",
+      bytes: new Uint8Array([0x00, 0x01, 0x02, 0x03]),
+      expected: "not a valid PNG image",
+    },
+    {
+      name: "bad.jpg",
+      mimeType: "image/jpeg",
+      bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+      expected: "not a valid JPEG image",
+    },
+    {
+      name: "bad.webp",
+      mimeType: "image/webp",
+      bytes: Buffer.from("RIFF0000JPEG"),
+      expected: "not a valid WebP image",
+    },
+    {
+      name: "bad.bmp",
+      mimeType: "image/bmp",
+      bytes: new Uint8Array([0x00, 0x00]),
+      expected: "not a valid BMP image",
+    },
+  ])("rejects corrupted $mimeType payloads: $name", ({ name, mimeType, bytes, expected }) =>
+    Effect.gen(function* () {
+      const fixture = yield* makeAttachmentFixture();
+      const badImage = {
+        ...imageAttachment,
+        id: `corrupt-${name}`,
+        name,
+        mimeType,
+      } satisfies ChatAttachment;
+      yield* fixture.write(badImage, bytes);
+
+      const error = yield* buildAntigravityPrompt({
+        input: undefined,
+        attachments: [badImage],
+        resolveAttachmentPath: fixture.resolve,
+        promptCapabilities: { image: true, audio: true, embeddedContext: true },
+      }).pipe(Effect.flip);
+
+      expect(error).toMatchObject({
+        _tag: "AcpRequestError",
+        code: -32602,
+        errorMessage: expect.stringContaining(expected),
       });
     }),
   );

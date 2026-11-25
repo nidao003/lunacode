@@ -2,7 +2,12 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
-import { cursorUsageResponseToLimits, readCursorUsageLimits } from "./usageLimits.ts";
+import {
+  cursorPlanLabel,
+  cursorUsageResponseToLimits,
+  readCursorAccountUsage,
+  readCursorUsageLimits,
+} from "./usageLimits.ts";
 
 describe("Cursor usage limits", () => {
   const checkedAt = "2026-09-16T00:00:00.000Z";
@@ -206,6 +211,37 @@ describe("Cursor usage limits", () => {
         expect(limits.unavailable?.reason).toBe("unsupported");
         expect(limits.unavailable?.message).toContain("default Cursor endpoint");
       }
+    }),
+  );
+
+  it.effect("extracts Cursor subscription tiers from GetCurrentPeriodUsage responses", () =>
+    Effect.gen(function* () {
+      expect(cursorPlanLabel({ planName: "Pro" })).toBe("Cursor Pro");
+      expect(cursorPlanLabel({ planName: "Cursor Ultra" })).toBe("Cursor Ultra");
+      expect(cursorPlanLabel({ individualMembershipType: "pro_plus" })).toBe("Cursor Pro+");
+      expect(cursorPlanLabel({ membershipType: "unified_ultra" })).toBe("Cursor Ultra");
+      expect(cursorPlanLabel({ membershipType: "team" })).toBe("Cursor Teams");
+      const result = yield* readCursorAccountUsage(
+        { apiEndpoint: "" },
+        { CURSOR_AUTH_TOKEN: "token" },
+      ).pipe(
+        Effect.provideService(
+          HttpClient.HttpClient,
+          HttpClient.make((request) =>
+            Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json({
+                  individualMembershipType: "pro_plus",
+                  planUsage: { totalPercentUsed: 12 },
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(result.planLabel).toBe("Cursor Pro+");
+      expect(result.usageLimits.windows[0]?.usedPercent).toBe(12);
     }),
   );
 });

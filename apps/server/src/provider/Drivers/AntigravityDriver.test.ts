@@ -328,7 +328,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
         expect(snapshot.models[0]?.aliases).toContain(ANTIGRAVITY_DEFAULT_MODEL);
         expect(snapshot.models.every((model) => model.isLegacy !== true)).toBe(true);
         expect(snapshot.slashCommands.map((command) => command.name)).toEqual(["plan", "logout"]);
-        expect(snapshot.supportsTextGeneration).toBe(true);
+        expect(snapshot.supportsTextGeneration).toBe(false);
         h.controls.selected = h.second;
         yield* h.refresh();
 
@@ -350,7 +350,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
             "antigravity-acp",
           ]);
           expect(launch.profileDirectory).toBe(h.profileDirectory);
-          expect(launch.forceFileStorage).toBe("1");
+          expect(launch.forceFileStorage).toBeUndefined();
           expect(launch.extendEnv).toBe(false);
         }
         for (const launch of h.launches) expect(launch.credentialKeys).toEqual([]);
@@ -375,13 +375,14 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
             .map((request) => request.params?.mcpServers),
         ).toEqual([[], []]);
         yield* h.assertClosed;
-        yield* h.instance.textGeneration
+        const textError = yield* h.instance.textGeneration
           .generateThreadTitle({
             cwd: h.profileDirectory,
             message: "Name this thread",
             modelSelection: { instanceId: h.instance.instanceId, model: "gemini-test-low" },
           })
-          .pipe(Effect.ignore);
+          .pipe(Effect.flip);
+        expect(textError.detail).toContain("personal Google subscriptions");
         const workspace = yield* h.fs.makeTempDirectoryScoped({ prefix: "t3-ag-chat-" });
         const threadId = ThreadId.make("thread-antigravity-capabilities");
         const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
@@ -408,8 +409,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
             .filter((request) => request.method === "initialize")
             .map((request) => request.params?.clientCapabilities),
         ).toEqual([
-          // Two model refreshes, then thread title generation.
-          helper,
+          // Two model refreshes (background text generation skips oauth-personal), then chat.
           helper,
           helper,
           {

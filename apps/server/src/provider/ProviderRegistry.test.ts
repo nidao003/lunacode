@@ -2133,6 +2133,28 @@ it.layer(
         );
       });
 
+      it("promotes newly discovered auth.label and auth.email across restart health checks", () => {
+        const merged = ProviderRegistry.mergeProviderSnapshot(signedIn, {
+          ...restartProbe,
+          auth: {
+            status: "unknown",
+            type: "oauth-personal",
+            email: "user@example.com",
+            label: "AI Pro",
+          },
+        });
+        assert.deepStrictEqual(merged.auth, {
+          status: "authenticated",
+          type: "oauth-personal",
+          email: "user@example.com",
+          label: "AI Pro",
+        });
+        assert.deepStrictEqual(
+          ProviderRegistry.mergeProviderSnapshot(merged, restartProbe).auth,
+          merged.auth,
+        );
+      });
+
       it("does not invent an account after sign-out, disable, uninstall, or for other providers", () => {
         const untouched = [
           { ...restartProbe, auth: { status: "unauthenticated" } },

@@ -116,7 +116,8 @@ export function resolveUsageLimitsAfterProbe(input: {
 }): ServerProviderUsageLimits | undefined {
   const { published, probed } = input;
   if (probed?.unavailable?.reason === "probeFailed" && published && !published.unavailable) {
-    return published;
+    // Keep the last good bars, but flag the failed read so clients can label them as cached.
+    return { ...published, unavailable: probed.unavailable };
   }
   if (
     published &&

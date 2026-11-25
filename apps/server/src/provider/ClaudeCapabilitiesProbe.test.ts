@@ -12,8 +12,10 @@ import * as TestClock from "effect/testing/TestClock";
 
 import {
   buildClaudeCapabilitiesProbeQueryOptions,
+  formatClaudeSubscriptionAuthLabel,
   probeClaudeCapabilities,
   probeClaudeWorkspaceSnapshot,
+  readClaudeCredentialsPlan,
   spawnClaudeProbeThroughEnv,
 } from "./ClaudeProvider.ts";
 
@@ -113,5 +115,44 @@ it.effect("keeps the probe subprocess alive while gateway model discovery can fi
     assert.equal(abortSignal?.aborted, false);
     yield* TestClock.adjust("3 seconds");
     assert.equal(abortSignal?.aborted, true);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it("formats Claude subscription labels including Max 5x and 20x tiers", () => {
+  assert.equal(
+    formatClaudeSubscriptionAuthLabel("max", "default_claude_max_5x"),
+    "Claude Max 5x Subscription",
+  );
+  assert.equal(
+    formatClaudeSubscriptionAuthLabel("max", "default_claude_max_20x"),
+    "Claude Max 20x Subscription",
+  );
+  assert.equal(
+    formatClaudeSubscriptionAuthLabel(undefined, "default_claude_max_20x"),
+    "Claude Max 20x Subscription",
+  );
+  assert.equal(formatClaudeSubscriptionAuthLabel("max"), "Claude Max Subscription");
+});
+
+it.effect("reads rateLimitTier from local .credentials.json without calling keychain", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const configDir = yield* fileSystem.makeTempDirectoryScoped();
+    yield* fileSystem.writeFileString(
+      `${configDir}/.credentials.json`,
+      JSON.stringify({
+        claudeAiOauth: {
+          subscriptionType: "max",
+          rateLimitTier: "default_claude_max_20x",
+        },
+      }),
+    );
+    const plan = yield* readClaudeCredentialsPlan(yield* decodeClaudeSettings({}), {
+      CLAUDE_CONFIG_DIR: configDir,
+    });
+    assert.deepEqual(plan, {
+      subscriptionType: "max",
+      rateLimitTier: "default_claude_max_20x",
+    });
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

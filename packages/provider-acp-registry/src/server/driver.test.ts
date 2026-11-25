@@ -13,6 +13,10 @@ import { toCustomModelSetting } from "@t3tools/shared/model";
 import { AcpRegistrySettings } from "../settings.ts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import * as Clock from "effect/Clock";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -104,7 +108,11 @@ function providerWithModels(
 
 describe("acpRegistrySnapshotReadiness", () => {
   it("keeps the custom model display name and options saved by the Settings editor", () => {
-    const fastMode = { id: "fast", label: "Fast mode", type: "boolean" } as const;
+    const fastMode = {
+      id: "fast",
+      label: "Fast mode",
+      type: "boolean",
+    } as const;
     const snapshot = buildCheckedAcpRegistrySnapshot({
       ...identity,
       settings: decodeSettings({
@@ -118,7 +126,12 @@ describe("acpRegistrySnapshotReadiness", () => {
         ],
       }),
       checkedAt: "2026-08-13T10:00:00.000Z",
-      inspection: { status: "ready", agentId: "test-agent", version: "1.0.0", distribution: "npx" },
+      inspection: {
+        status: "ready",
+        agentId: "test-agent",
+        version: "1.0.0",
+        distribution: "npx",
+      },
     });
     const model = snapshot.models.find((entry) => entry.slug === "gateway/my-model");
     expect(model?.name).toBe("My model");
@@ -139,7 +152,12 @@ describe("acpRegistrySnapshotReadiness", () => {
       ...identity,
       settings: decodeSettings({ source: "local", commandPath: "example" }),
       checkedAt: "2026-08-13T10:00:00.000Z",
-      inspection: { status: "ready", agentId: "example", version: null, distribution: "local" },
+      inspection: {
+        status: "ready",
+        agentId: "example",
+        version: null,
+        distribution: "local",
+      },
       probe: { probe, slashCommands: [], skills: [] },
     });
     expect(snapshot.version).toBe("1.5.9");
@@ -154,7 +172,12 @@ describe("acpRegistrySnapshotReadiness", () => {
         ...identity,
         settings: decodeSettings({ source: "local", commandPath: "example" }),
         checkedAt: "2026-08-13T10:00:00.000Z",
-        inspection: { status: "ready", agentId: "example", version: null, distribution: "local" },
+        inspection: {
+          status: "ready",
+          agentId: "example",
+          version: null,
+          distribution: "local",
+        },
         probe: { probe: withoutVersion, slashCommands: [], skills: [] },
       }).version,
     ).toBeNull();
@@ -222,7 +245,14 @@ describe("acpRegistrySnapshotReadiness", () => {
           instanceId: identity.instanceId,
           ready: true,
           icon: null,
-          authMethods: [{ id: "browser", name: "Browser", description: null, type: "agent" }],
+          authMethods: [
+            {
+              id: "browser",
+              name: "Browser",
+              description: null,
+              type: "agent",
+            },
+          ],
           models: [],
           currentModelId: null,
           configOptions: [],
@@ -237,7 +267,12 @@ describe("acpRegistrySnapshotReadiness", () => {
     expect(
       applyAcpRegistryLiveConfiguration(
         snapshot,
-        { models: [], currentModelId: null, configOptions: [], modelsFromModelSelect: false },
+        {
+          models: [],
+          currentModelId: null,
+          configOptions: [],
+          modelsFromModelSelect: false,
+        },
         [],
       ).auth.status,
     ).toBe("unknown");
@@ -297,7 +332,12 @@ describe("acpRegistrySnapshotReadiness", () => {
     expect(
       applyAcpRegistryLiveConfiguration(
         provider,
-        { models: [], currentModelId: null, configOptions: [], modelsFromModelSelect: false },
+        {
+          models: [],
+          currentModelId: null,
+          configOptions: [],
+          modelsFromModelSelect: false,
+        },
         [],
       ).models,
     ).toEqual(provider.models);
@@ -326,7 +366,9 @@ describe("acpRegistrySnapshotReadiness", () => {
       {
         slug: "probe-model",
         isDefault: true,
-        capabilities: { optionDescriptors: [{ id: "effort", currentValue: "high" }] },
+        capabilities: {
+          optionDescriptors: [{ id: "effort", currentValue: "high" }],
+        },
       },
     ]);
 
@@ -395,9 +437,16 @@ describe("acpRegistrySnapshotReadiness", () => {
           {
             modelId: "haiku",
             name: "Haiku",
-            _meta: { reasoningEfforts: [{ value: "low", label: "Low" }], reasoningEffort: "low" },
+            _meta: {
+              reasoningEfforts: [{ value: "low", label: "Low" }],
+              reasoningEffort: "low",
+            },
           },
-          { modelId: "glm", name: "GLM", _meta: { supportsReasoningEffort: false } },
+          {
+            modelId: "glm",
+            name: "GLM",
+            _meta: { supportsReasoningEffort: false },
+          },
         ],
       }),
       [],
@@ -521,8 +570,20 @@ describe("acpRegistrySnapshotReadiness", () => {
           configOptions: [],
           sessionManagement: noSessionManagement,
         },
-        slashCommands: [{ name: "plan", description: "Create a plan", input: { hint: "topic" } }],
-        skills: [{ name: "workspace-skill", path: "acp://skill/workspace-skill", enabled: true }],
+        slashCommands: [
+          {
+            name: "plan",
+            description: "Create a plan",
+            input: { hint: "topic" },
+          },
+        ],
+        skills: [
+          {
+            name: "workspace-skill",
+            path: "acp://skill/workspace-skill",
+            enabled: true,
+          },
+        ],
       },
     });
 
@@ -553,7 +614,11 @@ describe("acpRegistrySnapshotReadiness", () => {
       { name: "plan", description: "Create a plan", input: { hint: "topic" } },
     ]);
     expect(snapshot.skills).toEqual([
-      { name: "workspace-skill", path: "acp://skill/workspace-skill", enabled: true },
+      {
+        name: "workspace-skill",
+        path: "acp://skill/workspace-skill",
+        enabled: true,
+      },
     ]);
   });
 
@@ -661,7 +726,13 @@ describe("acpRegistrySnapshotReadiness", () => {
                 ready: true as const,
                 icon: null,
                 authMethods: [],
-                models: [{ id: "agent-model", name: "Agent Model", description: null }],
+                models: [
+                  {
+                    id: "agent-model",
+                    name: "Agent Model",
+                    description: null,
+                  },
+                ],
                 currentModelId: "agent-model",
                 configOptions: [],
                 sessionManagement: noSessionManagement,
@@ -682,7 +753,10 @@ describe("acpRegistrySnapshotReadiness", () => {
         ),
       );
 
-      expect(receivedEnvironment).toEqual({ ...environment, MISE_OFFLINE: "1" });
+      expect(receivedEnvironment).toEqual({
+        ...environment,
+        MISE_OFFLINE: "1",
+      });
       expect(snapshot).toMatchObject({
         auth: { status: "unknown" },
         models: [{ slug: "agent-model" }],
@@ -960,6 +1034,8 @@ const driverLayer = TestProviderHost.layer({ runBackgroundWork: false }).pipe(
     ),
   ),
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  // Kimi Code quota reads go through HTTP; nothing in these tests reaches it.
+  Layer.provideMerge(FetchHttpClient.layer),
 );
 
 it.layer(driverLayer, { excludeTestServices: true })("AcpRegistryDriver", (it) => {
@@ -984,11 +1060,121 @@ it.layer(driverLayer, { excludeTestServices: true })("AcpRegistryDriver", (it) =
     }),
   );
 
+  // Kimi Code keeps its sign-in and quota in its home directory, which the ACP probe never reads.
+  it.effect("reports Kimi Code's account and limits from its own credential store", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "acp-driver-",
+      });
+      const home = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "kimi-home-",
+      });
+      const agentPath = path.join(directory, "agent.mjs");
+      const modelsPath = path.join(directory, "models.json");
+      yield* fileSystem.writeFileString(agentPath, fakeAgentSource);
+      yield* fileSystem.writeFileString(modelsPath, JSON.stringify(["model-a"]));
+      yield* fileSystem.makeDirectory(path.join(home, "credentials"), {
+        recursive: true,
+      });
+      yield* fileSystem.writeFileString(
+        path.join(home, "credentials", "kimi-code.json"),
+        JSON.stringify({
+          access_token: "access",
+          refresh_token: "refresh",
+          expires_at: Math.floor((yield* Clock.currentTimeMillis) / 1_000) + 3_600,
+        }),
+      );
+      yield* fileSystem.writeFileString(path.join(home, "device_id"), "device-1");
+      const instance = yield* AcpRegistryDriver.create({
+        instanceId: identity.instanceId,
+        displayName: identity.displayName,
+        enabled: true,
+        environment: [{ name: "KIMI_CODE_HOME", value: home, sensitive: false }],
+        // A local executable named `kimi` is the Kimi Code agent.
+        config: decodeSettings({ source: "local", commandPath: "kimi" }),
+      }).pipe(
+        Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, {
+          ...catalogWithInspection({
+            status: "ready",
+            agentId: "kimi",
+            version: null,
+            distribution: "local",
+          }),
+          resolve: () =>
+            Effect.succeed({
+              distribution: "local" as const,
+              spawn: {
+                command: process.execPath,
+                args: [agentPath, modelsPath],
+              },
+            }),
+        }),
+        Effect.provideService(
+          HttpClient.HttpClient,
+          HttpClient.make((request) =>
+            Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json(
+                  request.url.endsWith("/usages")
+                    ? {
+                        usage: {
+                          limit: "100",
+                          used: "16",
+                          remaining: "84",
+                          resetTime: "2026-11-23T15:31:54.446Z",
+                        },
+                        limits: [
+                          {
+                            window: {
+                              duration: 300,
+                              timeUnit: "TIME_UNIT_MINUTE",
+                            },
+                            detail: {
+                              limit: "100",
+                              used: "5",
+                              remaining: "95",
+                            },
+                          },
+                        ],
+                      }
+                    : {
+                        user_id: "u1",
+                        nickname: "daodao",
+                        user_level_name: "Allegretto",
+                      },
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      const published = yield* instance.snapshot.streamChanges.pipe(
+        Stream.filter((snapshot) => snapshot.usageLimits !== undefined),
+        Stream.runHead,
+        Effect.forkScoped({ startImmediately: true }),
+      );
+      yield* instance.snapshot.refresh;
+      const next = yield* Fiber.join(published);
+      expect(Option.map(next, (snapshot) => snapshot.auth.email)).toEqual(Option.some("daodao"));
+      expect(Option.map(next, (snapshot) => snapshot.auth.label)).toEqual(
+        Option.some("Allegretto"),
+      );
+      expect(
+        Option.map(next, (snapshot) => snapshot.usageLimits?.windows.map((window) => window.id)),
+      ).toEqual(Option.some(["five_hour", "weekly"]));
+    }),
+  );
+
   it.effect("drops cached and session-reported models when its caches are invalidated", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "acp-driver-" });
+      const directory = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "acp-driver-",
+      });
       const agentPath = path.join(directory, "agent.mjs");
       const modelsPath = path.join(directory, "models.json");
       yield* fileSystem.writeFileString(agentPath, fakeAgentSource);
@@ -1012,7 +1198,10 @@ it.layer(driverLayer, { excludeTestServices: true })("AcpRegistryDriver", (it) =
           resolve: () =>
             Effect.succeed({
               distribution: "npx" as const,
-              spawn: { command: process.execPath, args: [agentPath, modelsPath] },
+              spawn: {
+                command: process.execPath,
+                args: [agentPath, modelsPath],
+              },
             }),
         }),
       );
@@ -1055,7 +1244,9 @@ it.layer(driverLayer, { excludeTestServices: true })("AcpRegistryDriver", (it) =
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "acp-driver-" });
+      const directory = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "acp-driver-",
+      });
       const agentPath = path.join(directory, "agent.mjs");
       const modelsPath = path.join(directory, "models.json");
       yield* fileSystem.writeFileString(agentPath, fakeAgentSource);
@@ -1078,7 +1269,10 @@ it.layer(driverLayer, { excludeTestServices: true })("AcpRegistryDriver", (it) =
           resolve: () =>
             Effect.succeed({
               distribution: "local" as const,
-              spawn: { command: process.execPath, args: [agentPath, modelsPath] },
+              spawn: {
+                command: process.execPath,
+                args: [agentPath, modelsPath],
+              },
             }),
         }),
       );
@@ -1105,7 +1299,9 @@ it.layer(driverLayer, { excludeTestServices: true })("AcpRegistryDriver", (it) =
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "acp-driver-" });
+      const directory = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "acp-driver-",
+      });
       const agentPath = path.join(directory, "agent.mjs");
       const modelsPath = path.join(directory, "models.json");
       yield* fileSystem.writeFileString(agentPath, fakeAgentSource);
@@ -1129,7 +1325,10 @@ it.layer(driverLayer, { excludeTestServices: true })("AcpRegistryDriver", (it) =
           resolve: () =>
             Effect.succeed({
               distribution: "npx" as const,
-              spawn: { command: process.execPath, args: [agentPath, modelsPath] },
+              spawn: {
+                command: process.execPath,
+                args: [agentPath, modelsPath],
+              },
             }),
         }),
       );

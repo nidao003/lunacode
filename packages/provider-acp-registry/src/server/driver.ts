@@ -21,6 +21,7 @@ import * as Equal from "effect/Equal";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as HttpClient from "effect/http/HttpClient";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -65,6 +66,7 @@ import * as AcpRegistrySupport from "./AcpRegistrySupport.ts";
 import * as AcpRegistryRuntimeCoordinator from "./AcpRegistryRuntimeCoordinator.ts";
 import * as AcpRegistryAuth from "./auth.ts";
 import * as AcpRegistryAuthenticationState from "./authenticationState.ts";
+import { readKimiUsageLimits } from "./kimiUsageLimits.ts";
 
 const DRIVER_KIND = ProviderDriverKind.make("acpRegistry");
 const decodeSettings = Schema.decodeSync(AcpRegistrySettings);
@@ -345,7 +347,11 @@ export function applyAcpRegistryAvailableCommands(
 ): ServerProvider {
   return Option.match(commands, {
     onNone: () => provider,
-    onSome: ({ slashCommands, skills }) => ({ ...provider, slashCommands, skills }),
+    onSome: ({ slashCommands, skills }) => ({
+      ...provider,
+      slashCommands,
+      skills,
+    }),
   });
 }
 
@@ -497,7 +503,10 @@ export function buildCheckedAcpRegistrySnapshot(
         ? {
             status: "unauthenticated",
             ...(advertisedAuthMethod
-              ? { type: advertisedAuthMethod.type, label: advertisedAuthMethod.name }
+              ? {
+                  type: advertisedAuthMethod.type,
+                  label: advertisedAuthMethod.name,
+                }
               : {}),
             ...(input.probeError.authAction === undefined
               ? {}
@@ -603,7 +612,8 @@ export const checkAcpRegistryProviderReadiness = Effect.fn(
 export type AcpRegistryDriverEnv =
   | AcpRegistryAdapterV2DriverEnv
   | Digest.Digest
-  | ProviderHost.ProviderHost;
+  | ProviderHost.ProviderHost
+  | HttpClient.HttpClient;
 
 export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryDriverEnv> = {
   driverKind: DRIVER_KIND,
@@ -639,6 +649,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
+    const httpClient = yield* HttpClient.HttpClient;
     const hostEnvironment = yield* HostProcess.Environment;
     const host = yield* ProviderHost.ProviderHost;
     const continuationIdentity = defaultProviderContinuationIdentity({
@@ -651,7 +662,10 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
       accentColor,
       continuationKey: continuationIdentity.continuationKey,
     };
-    const effectiveConfig = { ...config, enabled } satisfies AcpRegistrySettings;
+    const effectiveConfig = {
+      ...config,
+      enabled,
+    } satisfies AcpRegistrySettings;
     const processEnvironment = yield* mergeProviderInstanceEnvironment(
       environment,
       hostEnvironment,
@@ -713,7 +727,10 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
         input.installed &&
         input.auth.status === "unknown" &&
         (yield* confirmedAuthentication.get)
-          ? { ...input, auth: { ...input.auth, status: "authenticated" as const } }
+          ? {
+              ...input,
+              auth: { ...input.auth, status: "authenticated" as const },
+            }
           : input;
       return yield* Option.isNone(runtimeCoordinator)
         ? Effect.succeed(provider)
@@ -738,6 +755,33 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
     });
     // A local executable's version comes only from probing it, so readiness checks reuse the last report.
     const reportedLocalVersion = yield* Ref.make<string | null>(null);
+    // Kimi Code's own sign-in and quota live in its home directory, which the ACP probe never reads.
+    // The legacy `kimi` agent keeps the same credential layout, so it reads the same files.
+    const isKimi =
+      effectiveConfig.source !== "local"
+        ? effectiveConfig.agentId === "kimi-code" || effectiveConfig.agentId === "kimi"
+        : /^kimi(\.exe|\.cmd)?$/i.test(effectiveConfig.commandPath.split(/[\\/]/).pop() ?? "");
+    const withKimiLimits = Effect.fn("AcpRegistryDriver.withKimiLimits")(
+      function* (provider: ServerProvider) {
+        if (!isKimi) return provider;
+        const probe = yield* readKimiUsageLimits({
+          configuredHome: processEnvironment.KIMI_CODE_HOME,
+        }).pipe(Effect.orElseSucceed(() => undefined));
+        if (probe === undefined) return provider;
+        return {
+          ...provider,
+          auth: {
+            ...provider.auth,
+            ...(probe.email ? { email: probe.email } : {}),
+            ...(probe.label ? { label: probe.label } : {}),
+          },
+          usageLimits: probe.usageLimits,
+        } satisfies ServerProvider;
+      },
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+      Effect.provideService(HttpClient.HttpClient, httpClient),
+    );
     const checkProvider = checkAcpRegistryProviderReadiness(readinessInput).pipe(
       Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, catalog),
       Effect.flatMap((provider) =>
@@ -750,6 +794,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
         ),
       ),
       Effect.flatMap(withLiveRuntimeState),
+      Effect.flatMap(withKimiLimits),
     );
     const enrichProvider = checkAcpRegistryProviderStatus(
       {
@@ -763,6 +808,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, path),
       Effect.provideService(SecureRandom.SecureRandom, random),
+      Effect.flatMap(withKimiLimits),
     );
     const enrichmentCache = yield* Ref.make<AcpRegistryEnrichmentCache>({
       generation: 0,

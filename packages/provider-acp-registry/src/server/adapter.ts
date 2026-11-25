@@ -10,7 +10,7 @@ import {
   devinAnswerablePermissionOptions,
 } from "./devinAcp.ts";
 import { extractDroidElicitationForm } from "./droidAcp.ts";
-import { makeKimiPromptOutcomeWatch } from "./kimiAcp.ts";
+import { makeKimiPromptOutcomeWatch, KIMI_AGENT_BUSY_CODE } from "./kimiAcp.ts";
 import { extractOmpElicitationForm } from "./ompAcp.ts";
 import { extractOpenCodeElicitationForm } from "./opencodeAcp.ts";
 import {
@@ -121,16 +121,19 @@ export function registerMistralVibeAcpExtensions(context: AcpAdapterV2ExtensionC
 }
 
 export function acpRegistryPromptFailure(agentId: string, cause: unknown) {
+  const isKimiBusy =
+    isAcpRequestError(cause) && cause.errorMessage.includes("another turn is already in progress");
   return makeProviderFailure({
     cause,
     ...(isAcpRequestError(cause)
       ? {
           message: cause.errorMessage,
-          code: String(cause.code),
+          code: isKimiBusy ? KIMI_AGENT_BUSY_CODE : String(cause.code),
           class:
             agentId === "mistral-vibe" && cause.code === MISTRAL_VIBE_RATE_LIMITED
               ? ("usage_limit" as const)
               : ("provider_error" as const),
+          retryable: isKimiBusy ? true : null,
         }
       : { class: "provider_error" as const }),
   });
@@ -265,12 +268,18 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
   const flavor: AcpAdapterV2Flavor = {
     driver: ACP_REGISTRY_PROVIDER,
     // Cancelling a Copilot prompt also kills the background agents it started.
-    capabilities: isCopilot
-      ? {
-          ...AcpProviderCapabilitiesV2,
-          turns: { ...AcpProviderCapabilitiesV2.turns, supportsSteeringByInterruptRestart: false },
-        }
-      : AcpProviderCapabilitiesV2,
+    // Kimi Code only allows one active turn at a time; steering by interrupt+restart would
+    // race with its busy guard and cause the new prompt to be rejected mid-restart.
+    capabilities:
+      isCopilot || isKimi
+        ? {
+            ...AcpProviderCapabilitiesV2,
+            turns: {
+              ...AcpProviderCapabilitiesV2.turns,
+              supportsSteeringByInterruptRestart: false,
+            },
+          }
+        : AcpProviderCapabilitiesV2,
     customModels: readCustomModelEntries(options.settings.customModels).map((entry) => entry.slug),
     compactViaAdvertisedCommand: true,
     ...(isAntigravityCli ? { wakeOnDetachedRequest: true, replyEndsWithUsageUpdate: true } : {}),
@@ -366,7 +375,12 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
                             descriptor.type === "select" &&
                             descriptor.role === "reasoning" &&
                             descriptor.currentValue !== undefined
-                              ? [{ id: descriptor.id, value: descriptor.currentValue }]
+                              ? [
+                                  {
+                                    id: descriptor.id,
+                                    value: descriptor.currentValue,
+                                  },
+                                ]
                               : [],
                           ),
                       }),

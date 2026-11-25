@@ -49,9 +49,9 @@ T3 Connect is our built-in alternative to Tailscale for remote connections. If i
 
 ## Will I get banned for using my subscription?
 
-No. We work with all of the labs and T3 Code is within the TOS of Claude Code, Codex, and Google Antigravity. We worked directly with [SpaceXAI](https://x.com/SpaceXSI/status/2070195830192320600) to collaborate on the Grok Build and Cursor integrations. Everything else uses official ACP bindings.
+T3 Code / LunaCode runs each provider through its official CLI or ACP runtime without extracting private OAuth tokens, modifying client identities, auto-rotating accounts, or polling private undocumented endpoints in the background.
 
-If it works in T3 Code, you can trust it is safe.
+For Google Antigravity, quota checks are manual-only (triggered when you click Refresh) via the official `agy --print /usage --output-format json` command with a local cooldown cache, and personal subscriptions skip background helper turns. Always follow each provider's Terms of Service and avoid high-frequency automated usage or multi-account rotation on personal subscriptions.
 
 ## Can I add a bunch of accounts for one provider?
 

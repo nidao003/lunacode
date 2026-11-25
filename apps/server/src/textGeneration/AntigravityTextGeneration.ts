@@ -1,4 +1,8 @@
-import { ProviderSetupError, TextGenerationError } from "@t3tools/contracts";
+import {
+  type AntigravityAuthMethod,
+  ProviderSetupError,
+  TextGenerationError,
+} from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -58,6 +62,7 @@ type AntigravityTextRuntime = Pick<
 
 export interface AntigravityTextGenerationOptions {
   readonly profileDirectory: string;
+  readonly authMethod?: AntigravityAuthMethod;
   readonly defaultModel?: Effect.Effect<string | undefined>;
   readonly makeRuntime: (
     cwd: string,
@@ -145,6 +150,13 @@ export const makeAntigravityTextGeneration = Effect.fn("makeAntigravityTextGener
   const runAntigravityJson = Effect.fn("AntigravityTextGeneration.runJson")(
     function* <S extends Schema.Top>(input: TextGenerationOperations.Request<S>) {
       const { operation } = input;
+      if (options.authMethod === "oauth-personal") {
+        return yield* new TextGenerationError({
+          operation,
+          detail:
+            "Antigravity background text generation is disabled for personal Google subscriptions. Select another system model.",
+        });
+      }
       const scope = yield* Scope.make();
       yield* Effect.addFinalizer((exit) => Scope.close(scope, exit));
       const helper = Effect.gen(function* () {

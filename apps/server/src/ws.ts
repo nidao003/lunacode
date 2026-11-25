@@ -2529,6 +2529,11 @@ export const layerWsRpc = (
                 : input.instanceId !== undefined
                   ? providerRegistry.refreshInstance(input.instanceId)
                   : providerRegistry.refresh();
+            if (input.instanceId === undefined) {
+              // Quota probes fork so periodic checks stay cheap; a manual refresh waits them out
+              // and returns with the fresh limits published.
+              yield* providerRegistry.awaitUsageRefresh ?? Effect.void;
+            }
             if (input.refreshModels) {
               const instances = yield* providerInstances.listInstances;
               for (const instance of instances) {

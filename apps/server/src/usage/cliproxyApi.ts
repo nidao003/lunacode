@@ -16,22 +16,15 @@ import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import {
+  GROK_SETTINGS_URL,
   GROK_USAGE_URL,
   GrokUsageResponse,
   grokUsageResponseToLimits,
+  parseGrokPlan,
 } from "@t3tools/provider-grok/server";
 import { codexPlanLabel } from "../provider/CodexProvider.ts";
 import { codexRateLimitsToLimits } from "../provider/codexUsageLimits.ts";
-import { claudeUsageResponseToLimits } from "../provider/claudeUsageLimits.ts";
-import {
-  antigravityAccountFingerprint,
-  antigravitySummaryWindows,
-  antigravityUserAgent,
-} from "../provider/antigravityUsageLimits.ts";
-import {
-  makeUnavailableUsageLimits,
-  makeUsageLimits,
-} from "@t3tools/provider-core/server/usageLimits";
+import { makeUnavailableUsageLimits } from "@t3tools/provider-core/server/usageLimits";
 
 /** A hub with its management key already read from wherever the setting keeps it. */
 export interface CliproxyHub {
@@ -46,6 +39,9 @@ const AuthFile = Schema.Struct({
   email: Schema.optional(Schema.String),
   disabled: Schema.optional(Schema.Boolean),
   project_id: Schema.optional(Schema.String),
+  subscription_type: Schema.optional(Schema.String),
+  plan_type: Schema.optional(Schema.String),
+  rate_limit_tier: Schema.optional(Schema.String),
   id_token: Schema.optional(
     Schema.Struct({
       chatgpt_account_id: Schema.optional(Schema.String),
@@ -73,42 +69,6 @@ const CodexUsage = Schema.Struct({
     }),
   ),
 });
-// The usage endpoint can report a window without a utilization, as the CLI's own schema allows.
-const ClaudeWindow = Schema.Struct({
-  utilization: Schema.NullOr(Schema.Number),
-  resets_at: Schema.NullOr(Schema.String),
-});
-const ClaudeUsage = Schema.Struct({
-  five_hour: Schema.optional(Schema.NullOr(ClaudeWindow)),
-  seven_day: Schema.optional(Schema.NullOr(ClaudeWindow)),
-  spend: Schema.optional(Schema.Unknown),
-  extra_usage: Schema.optional(
-    Schema.NullOr(
-      Schema.Struct({
-        is_enabled: Schema.Boolean,
-        monthly_limit: Schema.NullOr(Schema.Number),
-        used_credits: Schema.NullOr(Schema.Number),
-        utilization: Schema.NullOr(Schema.Number),
-      }),
-    ),
-  ),
-  limits: Schema.optional(
-    Schema.Array(
-      Schema.Struct({
-        kind: Schema.String,
-        percent: Schema.optional(Schema.NullOr(Schema.Number)),
-        resets_at: Schema.optional(Schema.NullOr(Schema.String)),
-        scope: Schema.optional(
-          Schema.NullOr(
-            Schema.Struct({
-              model: Schema.optional(Schema.NullOr(Schema.Struct({ display_name: Schema.String }))),
-            }),
-          ),
-        ),
-      }),
-    ),
-  ),
-});
 const CreditList = Schema.Struct({
   credits: Schema.Array(
     Schema.Struct({
@@ -125,7 +85,6 @@ const decodeAuthFileModels = Schema.decodeUnknownEffect(AuthFileModels);
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeApiResponse = Schema.decodeUnknownEffect(ApiResponse);
 const decodeCreditList = Schema.decodeUnknownEffect(Schema.fromJsonString(CreditList));
-const decodeClaudeUsage = Schema.decodeUnknownEffect(Schema.fromJsonString(ClaudeUsage));
 const decodeCodexUsage = Schema.decodeUnknownEffect(Schema.fromJsonString(CodexUsage));
 const decodeGrokUsage = Schema.decodeUnknownEffect(Schema.fromJsonString(GrokUsageResponse));
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
@@ -296,55 +255,10 @@ const CODEX_HUB: HubProvider = {
 };
 
 const GROK_CLI_VERSION = "1.0.77";
-const ANTIGRAVITY_SUMMARY_URL =
-  "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary";
 
 // Keyed by the auth-files `provider`; accounts of any other provider are skipped.
 const HUB_PROVIDERS = new Map<string, HubProvider>([
   ["codex", CODEX_HUB],
-  [
-    "claude",
-    {
-      driver: ProviderDriverKind.make("claudeAgent"),
-      header: () => ({
-        Authorization: "Bearer $TOKEN$",
-        "anthropic-beta": "oauth-2025-04-20",
-        // The OAuth usage endpoint can return 429 without a Claude Code user agent.
-        "User-Agent": "claude-code/2.1.273",
-      }),
-      read: Effect.fnUntraced(function* ({ account, call, checkedAt }) {
-        const usage = yield* decodeClaudeUsage(
-          yield* call("https://api.anthropic.com/api/oauth/usage"),
-        );
-        const model_scoped = (usage.limits ?? []).flatMap((limit) =>
-          limit.kind === "weekly_scoped" && limit.scope?.model && typeof limit.percent === "number"
-            ? [
-                {
-                  display_name: limit.scope.model.display_name,
-                  utilization: limit.percent,
-                  resets_at: limit.resets_at ?? null,
-                },
-              ]
-            : [],
-        );
-        const rateLimits = {
-          five_hour: usage.five_hour ?? null,
-          seven_day: usage.seven_day ?? null,
-          model_scoped,
-          spend: usage.spend,
-          extra_usage: usage.extra_usage ?? null,
-        };
-        return {
-          ...listedIdentity(account),
-          plan: "Claude Subscription",
-          usageLimits: claudeUsageResponseToLimits({
-            checkedAt,
-            response: { rate_limits_available: true, rate_limits: rateLimits },
-          }).limits,
-        };
-      }),
-    },
-  ],
   [
     "xai",
     {
@@ -357,46 +271,17 @@ const HUB_PROVIDERS = new Map<string, HubProvider>([
       }),
       read: Effect.fnUntraced(function* ({ account, call, checkedAt }) {
         const usage = yield* decodeGrokUsage(yield* call(GROK_USAGE_URL));
-        return {
-          ...listedIdentity(account),
-          usageLimits: grokUsageResponseToLimits(usage, checkedAt),
-        };
-      }),
-    },
-  ],
-  [
-    "antigravity",
-    {
-      driver: ProviderDriverKind.make("antigravity"),
-      header: (_account, platform, architecture) => ({
-        Authorization: "Bearer $TOKEN$",
-        "Content-Type": "application/json",
-        "User-Agent": antigravityUserAgent(platform, architecture),
-      }),
-      read: Effect.fnUntraced(function* ({ account, call, checkedAt }) {
-        const project = account.project_id?.trim();
-        if (!project) {
-          return yield* new UsageLimitSourceError({ detail: "No Antigravity project reported." });
-        }
-        const requestedAt = DateTime.toEpochMillis(yield* DateTime.now);
-        const summary = yield* call(ANTIGRAVITY_SUMMARY_URL, { project });
-        const windows = yield* antigravitySummaryWindows(yield* decodeJson(summary), requestedAt);
-        if (windows.length === 0) {
-          return yield* new UsageLimitSourceError({ detail: "No Antigravity quota reported." });
-        }
-        // Local Antigravity reports no e-mail, so the Google account fingerprint is what pools the two.
-        const fingerprint = yield* call("https://www.googleapis.com/oauth2/v2/userinfo").pipe(
+        const plan = yield* call(GROK_SETTINGS_URL).pipe(
           Effect.flatMap(decodeJson),
-          Effect.flatMap(antigravityAccountFingerprint),
+          Effect.map(parseGrokPlan),
           Effect.option,
         );
-        const usageLimits = makeUsageLimits({ checkedAt, windows });
-        return Option.match(fingerprint, {
-          onNone: () => ({ ...listedIdentity(account), usageLimits }),
-          onSome: (credentialFingerprint) => ({
-            usageLimits: { ...usageLimits, credentialFingerprint },
-          }),
-        });
+        const resolvedPlan = Option.getOrUndefined(plan);
+        return {
+          ...listedIdentity(account),
+          ...(resolvedPlan ? { plan: resolvedPlan } : {}),
+          usageLimits: grokUsageResponseToLimits(usage, checkedAt),
+        };
       }),
     },
   ],

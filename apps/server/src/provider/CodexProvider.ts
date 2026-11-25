@@ -234,13 +234,23 @@ export function codexPlanLabel(planType: string | null | undefined): string | un
     case "enterprise":
       return "ChatGPT Enterprise Subscription";
     case "edu":
-    case "edu_plus":
-    case "edu_pro":
       return "ChatGPT Edu Subscription";
+    case "edu_plus":
+      return "ChatGPT Edu Plus Subscription";
+    case "edu_pro":
+      return "ChatGPT Edu Pro Subscription";
     case "unknown":
       return "ChatGPT Subscription";
-    default:
-      return undefined;
+    default: {
+      const normalized = planType?.trim();
+      if (!normalized) return undefined;
+      const titled = normalized
+        .split(/[\s_-]+/)
+        .filter((word) => word.length > 0)
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(" ");
+      return titled ? `ChatGPT ${titled} Subscription` : undefined;
+    }
   }
 }
 

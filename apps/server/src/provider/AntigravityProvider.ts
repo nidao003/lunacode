@@ -54,6 +54,9 @@ const AUTH_UNCHECKED_MESSAGE =
 const PublishingUsage = Context.Reference<boolean>("t3/provider/AntigravityPublishingUsage", {
   defaultValue: () => false,
 });
+const ManualUsageRefresh = Context.Reference<boolean>("t3/provider/AntigravityManualUsageRefresh", {
+  defaultValue: () => false,
+});
 
 type SessionSetupResult = Pick<
   AcpSessionRuntime.AcpSessionRuntimeStartResult["sessionSetupResult"],
@@ -169,6 +172,7 @@ interface AntigravityProviderOptions {
   >;
   readonly supportsTextGeneration: Effect.Effect<boolean>;
   readonly probeUsage?: Effect.Effect<ServerProviderUsageLimits>;
+  readonly readCachedUsage?: Effect.Effect<ServerProviderUsageLimits | undefined>;
   readonly clearUsage?: Effect.Effect<void>;
   readonly maintenanceCapabilities?: ProviderMaintenanceCapabilities;
   readonly auth?: { readonly type: string; readonly label: string };
@@ -252,9 +256,9 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
 
   // The quota read can take 30 seconds, so it never blocks readiness or a session start.
   // One read runs at a time; sign-in and sign-out interrupt it so a stale account never lands.
-  const usageRead = yield* FiberHandle.make();
+  // A manual refresh does not queue a second read — it joins the in-flight one (awaitUsageRefresh).
+  const usageRead = yield* FiberHandle.make<void, never>();
   const republish = yield* Deferred.make<Effect.Effect<ServerProvider>>();
-  const scope = yield* Effect.scope;
   const refreshUsage = Effect.fn("AntigravityProvider.refreshUsage")(function* () {
     if (!options.probeUsage || (yield* PublishingUsage)) return;
     yield* FiberHandle.run(
@@ -272,13 +276,14 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
             },
           })),
         ),
-        // Enrichment cannot change published limits; a health check publishes them.
+        // Enrichment cannot change published limits; a health check publishes them. Running it
+        // inline (not forked) means the read fiber finishing implies the fresh limits are published,
+        // so awaitUsageRefresh can join on it.
         Effect.andThen(
           Deferred.await(republish).pipe(
             Effect.flatten,
             Effect.provideService(PublishingUsage, true),
             Effect.ignoreCause({ log: true }),
-            Effect.forkIn(scope),
           ),
         ),
       ),
@@ -322,6 +327,18 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       if (state.authRevision !== before.authRevision) return state;
       const { message: _previousMessage, ...draft } = state.draft;
       const authenticated = draft.auth.status === "authenticated";
+      const { email: existingEmail, label: existingLabel, ...authWithoutIdentity } = draft.auth;
+      const nextEmail = missingInstallation ? undefined : authenticated ? existingEmail : undefined;
+      const nextLabel = missingInstallation
+        ? usesCredentials
+          ? options.auth?.label
+          : undefined
+        : existingLabel;
+      const nextAuth = {
+        ...authWithoutIdentity,
+        ...(nextLabel ? { label: nextLabel } : {}),
+        ...(nextEmail ? { email: nextEmail } : {}),
+      };
       const message =
         errorMessage ??
         (authenticated
@@ -333,6 +350,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
         ...state,
         draft: {
           ...draft,
+          auth: nextAuth,
           installed: !missingInstallation,
           // Lightweight custom-launcher probes lack versions; preserve the real handshake's version.
           version: version === "unknown" ? draft.version : version || draft.version,
@@ -365,7 +383,44 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       const stored = deferFailure && state.draft.status === "ready" ? state : checked;
       return [checked, stored === state ? Option.none() : Option.some(stored)];
     });
-    if (initialized !== undefined) yield* refreshUsage();
+    if (initialized !== undefined && options.probeUsage !== undefined) {
+      if (yield* ManualUsageRefresh) {
+        yield* refreshUsage();
+      } else if (!(yield* PublishingUsage) && next.draft.usageLimits === undefined) {
+        const hydrated =
+          !usesCredentials && options.readCachedUsage
+            ? yield* options.readCachedUsage.pipe(Effect.orElseSucceed(() => undefined))
+            : undefined;
+        const fallbackLimits = usesCredentials
+          ? {
+              checkedAt: updatedAt,
+              windows: [],
+              unavailable: { reason: "unsupported" as const },
+            }
+          : (hydrated ?? {
+              checkedAt: updatedAt,
+              windows: [],
+              unavailable: {
+                reason: "probeFailed" as const,
+                message: "Click Refresh to check Antigravity limits via the official agy CLI.",
+              },
+            });
+        const hydratedDraft = yield* SubscriptionRef.modify(metadata, (state) => {
+          if (state.authRevision !== next.authRevision || state.draft.usageLimits !== undefined) {
+            return [state.draft, state];
+          }
+          const updated = {
+            ...state,
+            draft: {
+              ...state.draft,
+              usageLimits: fallbackLimits,
+            },
+          };
+          return [updated.draft, updated];
+        });
+        return yield* options.stampIdentity(hydratedDraft);
+      }
+    }
     return yield* options.stampIdentity(next.draft);
   });
 
@@ -410,6 +465,8 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       const { message: _previousMessage, ...draft } = state.draft;
       const workspaces = draft.workspaceSnapshots ?? [];
       const workspace = cwd ? workspaces.find((entry) => entry.cwd === cwd) : undefined;
+      const preservedLabel =
+        state.draft.auth.status !== "unauthenticated" ? state.draft.auth.label : undefined;
       return {
         authRevision: state.authRevision + 1,
         draft: {
@@ -420,7 +477,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
           auth: {
             status: "authenticated",
             type: options.auth?.type ?? "oauth-personal",
-            label: options.auth?.label ?? "Google account",
+            label: preservedLabel ?? options.auth?.label ?? "Google account",
           },
           checkedAt: updatedAt,
           models: buildAntigravityModelsFromSession(started.sessionSetupResult, thinkingLevels),
@@ -442,7 +499,6 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
         },
       } satisfies AntigravityProviderState;
     });
-    if (!before.draft.usageLimits || before.draft.usageLimits.unavailable) yield* refreshUsage();
   });
 
   const onConfigOptionsUpdated = Effect.fn("AntigravityProvider.onConfigOptionsUpdated")(function* (
@@ -552,7 +608,14 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
   });
 
   return {
-    snapshot: { ...managed, getSnapshot },
+    snapshot: {
+      ...managed,
+      getSnapshot,
+      refresh: managed.refresh.pipe(Effect.provideService(ManualUsageRefresh, true)),
+      refreshUsage: Effect.void,
+      // A manual refresh kicks a quota probe and joins this to return once fresh limits published.
+      awaitUsageRefresh: FiberHandle.awaitEmpty(usageRead).pipe(Effect.ignoreCause({ log: true })),
+    },
     onSessionStarted,
     onConfigOptionsUpdated,
     onAvailableCommands,
@@ -562,7 +625,17 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       Effect.andThen(
         SubscriptionRef.update(metadata, (state) => {
           const { usageLimits: _previousAccount, ...draft } = state.draft;
-          return { ...state, draft };
+          const { email: _previousEmail, label: _previousLabel, ...auth } = draft.auth;
+          return {
+            ...state,
+            draft: {
+              ...draft,
+              auth: {
+                ...auth,
+                ...(options.auth?.label ? { label: options.auth.label } : {}),
+              },
+            },
+          };
         }),
       ),
       Effect.andThen(

@@ -1,5 +1,4 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -57,6 +56,9 @@ function fixture(
       disabled?: boolean;
       project_id?: string;
       id_token?: { chatgpt_account_id: string; plan_type?: string; chatgpt_plan_type?: string };
+      subscription_type?: string;
+      plan_type?: string;
+      rate_limit_tier?: string;
     }>;
     upstream?: (request: RequestBody) => { status: number; body: unknown };
     cooldownStatus?: number;
@@ -368,134 +370,6 @@ describe("CLIProxyAPI built-in management API", () => {
     }),
   );
 
-  it.effect("maps Claude scoped windows without a scheduler plugin", () =>
-    Effect.gen(function* () {
-      const test = fixture({
-        accounts: [{ ...accounts[0]!, provider: "claude" }],
-        // The usage endpoint answers 429 to requests without a Claude Code user agent.
-        upstream: (request) => ({
-          status: request.header?.["User-Agent"]?.startsWith("claude-code/") ? 200 : 429,
-          body: {
-            five_hour: { utilization: 10, resets_at: null },
-            seven_day: { utilization: 50, resets_at: "2099-01-01T00:00:00Z" },
-            limits: [
-              {
-                kind: "weekly_scoped",
-                percent: 80,
-                resets_at: null,
-                scope: { model: { display_name: "Fable" } },
-              },
-            ],
-          },
-        }),
-      });
-      const api = yield* test.api;
-      const result = yield* api.readAccounts(config);
-      expect(
-        result[0]?.usageLimits.windows.map((window) => [window.id, window.usedPercent]),
-      ).toEqual([
-        ["five_hour", 10],
-        ["seven_day", 50],
-        ["seven_day_fable", 80],
-      ]);
-    }),
-  );
-
-  it.effect.each([
-    {
-      name: "spend budget",
-      budget: {
-        spend: {
-          enabled: true,
-          used: { amount_minor: 4_631, currency: "USD", exponent: 2 },
-          limit: { amount_minor: 50_000, currency: "USD", exponent: 2 },
-        },
-      },
-    },
-    {
-      name: "extra usage",
-      budget: {
-        extra_usage: {
-          is_enabled: true,
-          used_credits: 4_631,
-          monthly_limit: 50_000,
-          utilization: 9,
-        },
-      },
-    },
-  ])("keeps Claude monthly spend from $name beside rolling windows", ({ budget }) =>
-    Effect.gen(function* () {
-      const test = fixture({
-        accounts: [{ ...accounts[0]!, provider: "claude" }],
-        upstream: () => ({
-          status: 200,
-          body: { five_hour: { utilization: 10, resets_at: null }, ...budget },
-        }),
-      });
-      const result = yield* (yield* test.api).readAccounts(config);
-      expect(
-        result[0]?.usageLimits.windows.map((window) => [window.id, window.usedPercent]),
-      ).toEqual([
-        ["five_hour", 10],
-        ["monthly_spend", expect.closeTo(9.262, 10)],
-      ]);
-    }),
-  );
-
-  it.effect("omits disabled Claude budgets without losing rolling windows", () =>
-    Effect.gen(function* () {
-      const test = fixture({
-        accounts: [{ ...accounts[0]!, provider: "claude" }],
-        upstream: () => ({
-          status: 200,
-          body: {
-            five_hour: { utilization: 10, resets_at: null },
-            spend: { enabled: false, used: null, limit: null },
-            extra_usage: {
-              is_enabled: false,
-              used_credits: null,
-              monthly_limit: null,
-              utilization: null,
-            },
-          },
-        }),
-      });
-      const result = yield* (yield* test.api).readAccounts(config);
-      expect(result[0]?.usageLimits.windows.map((window) => window.id)).toEqual(["five_hour"]);
-    }),
-  );
-
-  it.effect("keeps a Claude account whose window reports no utilization", () =>
-    Effect.gen(function* () {
-      const test = fixture({
-        accounts: [{ ...accounts[0]!, provider: "claude" }],
-        upstream: () => ({
-          status: 200,
-          body: {
-            five_hour: { utilization: null, resets_at: null },
-            seven_day: { utilization: 50, resets_at: "2099-01-01T00:00:00Z" },
-          },
-        }),
-      });
-      const result = yield* (yield* test.api).readAccounts(config);
-      expect(result[0]?.usageLimits.unavailable).toBeUndefined();
-      expect(
-        result[0]?.usageLimits.windows.map((window) => [window.id, window.usedPercent]),
-      ).toEqual([["seven_day", 50]]);
-    }),
-  );
-
-  const antigravitySummary = {
-    buckets: [
-      {
-        bucketId: "gemini-weekly",
-        window: "weekly",
-        remainingFraction: 0.75,
-        resetTime: "2099-01-01T00:00:00Z",
-      },
-    ],
-  };
-
   it.effect("reads an xAI account as Grok with Grok CLI headers", () =>
     Effect.gen(function* () {
       const test = fixture({
@@ -526,101 +400,9 @@ describe("CLIProxyAPI built-in management API", () => {
     }),
   );
 
-  it.effect("reads an Antigravity summary and keys the account by its Google ID", () =>
-    Effect.gen(function* () {
-      const test = fixture({
-        accounts: [
-          {
-            id: "antigravity-g@example.com.json",
-            auth_index: "g",
-            provider: "antigravity",
-            email: "g@example.com",
-            project_id: "project-7",
-          },
-        ],
-        upstream: (request) => ({
-          status: 200,
-          body: request.url?.endsWith("/userinfo") ? { id: "google-42" } : antigravitySummary,
-        }),
-      });
-      const [account] = yield* (yield* test.api).readAccounts(config);
-      expect(account?.driver).toBe("antigravity");
-      expect(account?.email).toBeUndefined();
-      expect(account?.usageLimits.credentialFingerprint).toBe(
-        // sha256("google-account\0google-42"), as a local Antigravity probe reports it.
-        "136d4952771fd67a3600053f37492cbd05828712e0b1c89ebab03d4c22ab6554",
-      );
-      expect(account?.usageLimits.windows).toMatchObject([
-        { id: "gemini-weekly", kind: "weekly", usedPercent: 25 },
-      ]);
-      const summary = test.requests.find((request) => request.body?.method === "POST")?.body;
-      expect(summary?.url).toBe(
-        "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
-      );
-      expect(summary?.data).toBe(encodeJson({ project: "project-7" }));
-      expect(summary).toMatchObject({
-        auth_index: "g",
-        method: "POST",
-        header: {
-          Authorization: "Bearer $TOKEN$",
-          "Content-Type": "application/json",
-          "User-Agent":
-            "antigravity/hub/2.24.0 (aidev_client; os_type=linux; arch=x64; cl=963137146)",
-        },
-      });
-      const identityCalls = test.requests.filter((request) =>
-        request.body?.url?.endsWith("/userinfo"),
-      );
-      expect(identityCalls).toHaveLength(1);
-      expect(identityCalls[0]?.body).toMatchObject({
-        method: "GET",
-        url: "https://www.googleapis.com/oauth2/v2/userinfo",
-        header: { Authorization: "Bearer $TOKEN$" },
-      });
-    }).pipe(
-      Effect.provideService(HostProcess.Platform, "linux"),
-      Effect.provideService(HostProcess.Architecture, "x64"),
-    ),
-  );
-
-  it.effect("keeps Antigravity limits and listing email when its identity read fails", () =>
-    Effect.gen(function* () {
-      const test = fixture({
-        accounts: [
-          {
-            id: "antigravity.json",
-            auth_index: "g",
-            provider: "antigravity",
-            email: "g@example.com",
-            project_id: "project-7",
-          },
-        ],
-        upstream: (request) =>
-          request.url?.endsWith("/userinfo")
-            ? { status: 403, body: { error: "denied" } }
-            : {
-                status: 200,
-                body: antigravitySummary,
-              },
-      });
-      const result = yield* (yield* test.api).readAccounts(config);
-      expect(result).toHaveLength(1);
-      const [account] = result;
-      expect(account).toMatchObject({ driver: "antigravity", email: "g@example.com" });
-      expect(account?.usageLimits.credentialFingerprint).toBeUndefined();
-      expect(account?.usageLimits.unavailable).toBeUndefined();
-      expect(account?.usageLimits.windows).toMatchObject([
-        { id: "gemini-weekly", kind: "weekly", usedPercent: 25 },
-      ]);
-    }),
-  );
-
   it.effect.each([
     { name: "a refused xAI call", provider: "xai", status: 403, body: { error: "denied" } },
     { name: "a malformed xAI answer", provider: "xai", status: 200, body: { config: "x" } },
-    { name: "a refused Antigravity call", provider: "antigravity", status: 401, body: {} },
-    { name: "a malformed Antigravity answer", provider: "antigravity", status: 200, body: [] },
-    { name: "an empty Antigravity summary", provider: "antigravity", status: 200, body: {} },
   ])("reports $name as unreadable", ({ provider, status, body }) =>
     Effect.gen(function* () {
       const test = fixture({
@@ -632,40 +414,36 @@ describe("CLIProxyAPI built-in management API", () => {
     }),
   );
 
-  it.effect.each([undefined, "", "  "])(
-    "rejects a missing or blank Antigravity project (%s) before upstream calls",
-    (project_id) =>
-      Effect.gen(function* () {
-        const test = fixture({
-          accounts: [
-            {
-              id: "antigravity.json",
-              auth_index: "a",
-              provider: "antigravity",
-              ...(project_id === undefined ? {} : { project_id }),
-            },
-          ],
-        });
-        const [account] = yield* (yield* test.api).readAccounts(config);
-        expect(account?.usageLimits.unavailable?.reason).toBe("probeFailed");
-        expect(test.requests.map((request) => request.path)).not.toContain(
-          "/v0/management/api-call",
-        );
-      }),
-  );
-
-  it.effect("skips accounts of providers the hub table does not know", () =>
+  it.effect("skips unknown, Claude, and Antigravity hub accounts without querying them", () =>
     Effect.gen(function* () {
       const test = fixture({
         accounts: [
           { id: "kiro.json", auth_index: "k", provider: "kiro", email: "k@example.com" },
           { ...accounts[0]!, provider: "claude" },
+          {
+            id: "antigravity.json",
+            auth_index: "ag",
+            provider: "antigravity",
+            email: "ag@example.com",
+            project_id: "project-7",
+          },
+          { id: "xai.json", auth_index: "x", provider: "xai", email: "x@example.com" },
         ],
-        upstream: () => ({ status: 200, body: { five_hour: { utilization: 1, resets_at: null } } }),
+        upstream: () => ({
+          status: 200,
+          body: {
+            config: {
+              creditUsagePercent: 20,
+              currentPeriod: { type: "USAGE_PERIOD_TYPE_MONTHLY", end: "2099-01-01T00:00:00Z" },
+            },
+          },
+        }),
       });
       const result = yield* (yield* test.api).readAccounts(config);
-      expect(result.map((account) => account.driver)).toEqual(["claudeAgent"]);
+      expect(result.map((account) => account.driver)).toEqual(["grok"]);
       expect(test.requests.map((request) => request.body?.auth_index)).not.toContain("k");
+      expect(test.requests.map((request) => request.body?.auth_index)).not.toContain("a");
+      expect(test.requests.map((request) => request.body?.auth_index)).not.toContain("ag");
     }),
   );
 
@@ -748,6 +526,42 @@ describe("CLIProxyAPI built-in management API", () => {
       const result = yield* api.consume(config, "missing.json", "credit").pipe(Effect.result);
       expect(result._tag).toBe("Failure");
       expect(test.requests).toHaveLength(1);
+    }),
+  );
+
+  it.effect("reads subscription plans for hub xAI accounts", () =>
+    Effect.gen(function* () {
+      const test = fixture({
+        accounts: [
+          {
+            id: "xai.json",
+            auth_index: "x",
+            provider: "xai",
+            email: "x@example.com",
+          },
+        ],
+        upstream: (request) => {
+          if (request.url?.endsWith("/v1/settings")) {
+            return {
+              status: 200,
+              body: { settings: { subscription_tier_display: "SuperGrok Heavy" } },
+            };
+          }
+          return {
+            status: 200,
+            body: {
+              config: {
+                creditUsagePercent: 15,
+                currentPeriod: { type: "USAGE_PERIOD_TYPE_MONTHLY", end: "2099-01-01T00:00:00Z" },
+              },
+            },
+          };
+        },
+      });
+      const result = yield* (yield* test.api).readAccounts(config);
+      expect(result.map((entry) => [entry.driver, entry.plan])).toEqual([
+        ["grok", "SuperGrok Heavy"],
+      ]);
     }),
   );
 });

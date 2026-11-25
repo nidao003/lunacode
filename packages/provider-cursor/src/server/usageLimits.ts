@@ -1,4 +1,4 @@
-import type { ServerProviderUsageWindow } from "@t3tools/contracts";
+import type { ServerProviderUsageLimits, ServerProviderUsageWindow } from "@t3tools/contracts";
 import type { CursorSettings } from "../settings.ts";
 import { CURSOR_USAGE_WINDOWS } from "@t3tools/shared/usageLimits";
 import * as DateTime from "effect/DateTime";
@@ -18,6 +18,9 @@ import { DEFAULT_CURSOR_API_ENDPOINT, exchangeCursorApiKey } from "./apiKey.ts";
 const CursorUsageResponse = Schema.Struct({
   billingCycleStart: Schema.optional(Schema.Union([Schema.String, Schema.Number])),
   billingCycleEnd: Schema.optional(Schema.Union([Schema.String, Schema.Number])),
+  planName: Schema.optional(Schema.String),
+  membershipType: Schema.optional(Schema.String),
+  individualMembershipType: Schema.optional(Schema.String),
   planUsage: Schema.optional(
     Schema.Struct({
       totalPercentUsed: Schema.optional(Schema.Number),
@@ -26,6 +29,49 @@ const CursorUsageResponse = Schema.Struct({
     }),
   ),
 });
+
+function cursorMembershipWords(raw: string): string {
+  return raw
+    .trim()
+    .split(/[\s_-]+/)
+    .filter((word) => word.length > 0)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+export function cursorPlanLabel(
+  response: Pick<
+    typeof CursorUsageResponse.Type,
+    "planName" | "individualMembershipType" | "membershipType"
+  >,
+): string | undefined {
+  const planName = response.planName?.trim();
+  if (planName) {
+    return /^cursor\b/i.test(planName) ? planName : `Cursor ${planName}`;
+  }
+  const membership = (response.individualMembershipType ?? response.membershipType)?.trim();
+  if (!membership) return undefined;
+  const normalized = membership.toLowerCase().replace(/[\s-]+/g, "_");
+  switch (normalized) {
+    case "free":
+    case "hobby":
+      return "Cursor Free";
+    case "pro":
+      return "Cursor Pro";
+    case "pro_plus":
+      return "Cursor Pro+";
+    case "ultra":
+    case "unified_ultra":
+      return "Cursor Ultra";
+    case "team":
+    case "business":
+      return "Cursor Teams";
+    case "enterprise":
+      return "Cursor Enterprise";
+    default:
+      return `Cursor ${cursorMembershipWords(membership)}`;
+  }
+}
 
 /** Cursor's dashboard percentages include bonus usage; spend / limit does not. */
 export function cursorUsageResponseToLimits(
@@ -62,7 +108,12 @@ export function cursorUsageResponseToLimits(
     : makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" });
 }
 
-export const readCursorUsageLimits = Effect.fn("readCursorUsageLimits")(function* (
+export interface CursorAccountUsage {
+  readonly usageLimits: ServerProviderUsageLimits;
+  readonly planLabel?: string;
+}
+
+export const readCursorAccountUsage = Effect.fn("readCursorAccountUsage")(function* (
   settings: Pick<CursorSettings, "apiEndpoint">,
   environment: NodeJS.ProcessEnv = process.env,
 ) {
@@ -77,15 +128,21 @@ export const readCursorUsageLimits = Effect.fn("readCursorUsageLimits")(function
     const apiKey = environment.CURSOR_API_KEY?.trim();
     if (!token && apiKey) {
       if (endpoint !== DEFAULT_CURSOR_API_ENDPOINT) {
-        return makeUnavailableUsageLimits({
-          checkedAt,
-          reason: "unsupported",
-          message: "Cursor usage for an API key requires the default Cursor endpoint.",
-        });
+        return {
+          usageLimits: makeUnavailableUsageLimits({
+            checkedAt,
+            reason: "unsupported",
+            message: "Cursor usage for an API key requires the default Cursor endpoint.",
+          }),
+        } satisfies CursorAccountUsage;
       }
       token = yield* exchangeCursorApiKey(apiKey);
     }
-    if (!token) return makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" });
+    if (!token) {
+      return {
+        usageLimits: makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" }),
+      } satisfies CursorAccountUsage;
+    }
     const client = yield* HttpClient.HttpClient;
     const response = yield* client.execute(
       HttpClientRequest.post(`${endpoint}/aiserver.v1.DashboardService/GetCurrentPeriodUsage`).pipe(
@@ -100,15 +157,27 @@ export const readCursorUsageLimits = Effect.fn("readCursorUsageLimits")(function
     const body = yield* HttpClientResponse.schemaBodyJson(CursorUsageResponse)(
       yield* HttpClientResponse.filterStatusOk(response),
     );
-    return cursorUsageResponseToLimits(body, checkedAt);
+    const planLabel = cursorPlanLabel(body);
+    return {
+      usageLimits: cursorUsageResponseToLimits(body, checkedAt),
+      ...(planLabel ? { planLabel } : {}),
+    } satisfies CursorAccountUsage;
   }).pipe(
     Effect.timeout("10 seconds"),
-    Effect.orElseSucceed(() =>
-      makeUnavailableUsageLimits({
+    Effect.orElseSucceed((): CursorAccountUsage => ({
+      usageLimits: makeUnavailableUsageLimits({
         checkedAt,
         reason: "probeFailed",
         message: "Cursor could not read usage limits.",
       }),
-    ),
+    })),
   );
+});
+
+export const readCursorUsageLimits = Effect.fn("readCursorUsageLimits")(function* (
+  settings: Pick<CursorSettings, "apiEndpoint">,
+  environment: NodeJS.ProcessEnv = process.env,
+) {
+  const result = yield* readCursorAccountUsage(settings, environment);
+  return result.usageLimits;
 });

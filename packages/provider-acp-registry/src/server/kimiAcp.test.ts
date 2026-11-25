@@ -7,10 +7,16 @@ import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as TestClock from "effect/testing/TestClock";
 
-import { makeKimiPromptOutcomeWatch } from "./kimiAcp.ts";
+import { makeKimiPromptOutcomeWatch, KIMI_AGENT_BUSY_CODE } from "./kimiAcp.ts";
 
 const SESSION_ID = "session_06abd65a-ab8c-4f7a-a504-9b105fc7cd0d";
 const endTurn = { stopReason: "end_turn" } as const;
+// KIMI_AGENT_BUSY_CODE must stay in sync with Kimi Code's ACP error code so T3's
+// promptFailure handler and isAgentBusyPromptError both recognise it correctly.
+it("KIMI_AGENT_BUSY_CODE matches the ACP error code Kimi Code emits", () => {
+  assert.strictEqual(KIMI_AGENT_BUSY_CODE, "turn.agent_busy");
+});
+
 // Records trimmed from Kimi Code 2.5.3's wire.jsonl after the follow-up model request failed.
 const failedTurn = (turnId: number) =>
   JSON.stringify({
@@ -29,7 +35,12 @@ const failedTurn = (turnId: number) =>
     time: 1794813146537,
   }) + "\n";
 const completedTurn = (turnId: number) =>
-  JSON.stringify({ type: "turn.ended", agentId: "main", turnId, reason: "completed" }) + "\n";
+  JSON.stringify({
+    type: "turn.ended",
+    agentId: "main",
+    turnId,
+    reason: "completed",
+  }) + "\n";
 
 it.layer(NodeServices.layer)("makeKimiPromptOutcomeWatch", (it) => {
   it.effect("fails only the turn this prompt ended, once Kimi writes its outcome", () =>
