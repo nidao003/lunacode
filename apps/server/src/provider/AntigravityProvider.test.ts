@@ -137,6 +137,14 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
     readonly auth?: { readonly type: string; readonly label: string };
     readonly enabled?: boolean;
     readonly safe?: boolean;
+    readonly readAccountInfo?: Effect.Effect<
+      | {
+          readonly email?: string | undefined;
+          readonly label?: string | undefined;
+          readonly hasToken?: boolean | undefined;
+        }
+      | undefined
+    >;
     readonly probeUsage?: Effect.Effect<ServerProviderUsageLimits>;
     readonly readCachedUsage?: Effect.Effect<ServerProviderUsageLimits | undefined>;
   } = {},
@@ -153,6 +161,7 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
     {
       stampIdentity: (snapshot) => Effect.succeed({ ...snapshot, instanceId, driver }),
       ...(options.auth ? { auth: options.auth } : {}),
+      ...(options.readAccountInfo ? { readAccountInfo: options.readAccountInfo } : {}),
       ...(options.probeUsage ? { probeUsage: options.probeUsage } : {}),
       ...(options.readCachedUsage ? { readCachedUsage: options.readCachedUsage } : {}),
       probe: Ref.update(probeCalls, (count) => count + 1).pipe(
@@ -743,7 +752,8 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
         expect(yield* Ref.get(probeCount)).toBe(0);
         expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(limits);
 
-        // `snapshot.refreshUsage` (per-turn background refresh) is a compliance no-op.
+        // Ordinary provider and automatic turn-failure refreshes stay passive; only refreshUsageManual invokes the CLI.
+        yield* harness.provider.snapshot.refresh;
         yield* harness.provider.snapshot.refreshUsage!;
         expect(yield* Ref.get(probeCount)).toBe(0);
 
@@ -760,7 +770,7 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
           ],
         };
         yield* Ref.set(usage, newLimits);
-        yield* harness.provider.snapshot.refresh;
+        yield* harness.provider.snapshot.refreshUsageManual!;
         yield* harness.provider.snapshot.awaitUsageRefresh;
         expect(yield* Ref.get(probeCount)).toBe(1);
         expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(newLimits);
@@ -771,7 +781,7 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
           windows: [],
           unavailable: { reason: "probeFailed" },
         });
-        yield* harness.provider.snapshot.refresh;
+        yield* harness.provider.snapshot.refreshUsageManual!;
         yield* harness.provider.snapshot.awaitUsageRefresh;
         expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual({
           ...newLimits,
@@ -787,7 +797,7 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
         const unsupported = yield* harness.nextPublish(
           (snapshot) => snapshot.usageLimits?.unavailable?.reason === "unsupported",
         );
-        yield* harness.provider.snapshot.refresh;
+        yield* harness.provider.snapshot.refreshUsageManual!;
         expect((yield* unsupported)?.usageLimits?.windows).toEqual([]);
       }),
   );
@@ -817,10 +827,42 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
         },
       });
       yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
-      yield* harness.provider.snapshot.refresh;
+      yield* harness.provider.snapshot.refreshUsageManual!;
       yield* harness.provider.snapshot.awaitUsageRefresh;
       expect(yield* Ref.get(probeCount)).toBe(1);
     }),
+  );
+
+  it.effect(
+    "populates auth.email via readAccountInfo and clears identity when token disappears",
+    () =>
+      Effect.gen(function* () {
+        const accountInfo = yield* Ref.make<
+          { readonly hasToken: boolean; readonly email?: string | undefined } | undefined
+        >({ hasToken: true, email: "alice@example.com" });
+        const harness = yield* makeHarness({
+          readAccountInfo: Ref.get(accountInfo),
+          readCachedUsage: Effect.undefined,
+        });
+        yield* harness.initialize;
+        expect((yield* harness.provider.snapshot.getSnapshot).auth.email).toBe("alice@example.com");
+
+        yield* harness.provider.onSessionStarted(started, "/workspace");
+        expect((yield* harness.provider.snapshot.getSnapshot).auth).toMatchObject({
+          status: "authenticated",
+          email: "alice@example.com",
+        });
+
+        yield* Ref.set(accountInfo, { hasToken: false });
+        yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
+        yield* harness.provider.snapshot.refresh;
+        const cleared = yield* harness.provider.snapshot.getSnapshot;
+        expect(cleared.auth.email).toBeUndefined();
+        expect(cleared.usageLimits?.unavailable).toEqual({
+          reason: "unsupported",
+          message: "Sign in with Google to see Antigravity limits.",
+        });
+      }),
   );
 
   it.effect("a quota read finishing after sign-out cannot restore account limits", () =>
@@ -837,7 +879,7 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
         usage,
         Deferred.succeed(readStarted, undefined).pipe(Effect.andThen(Deferred.await(readResult))),
       );
-      const refresh = yield* harness.provider.snapshot.refresh.pipe(Effect.forkChild);
+      const refresh = yield* harness.provider.snapshot.refreshUsageManual!.pipe(Effect.forkChild);
       yield* Deferred.await(readStarted);
       yield* harness.provider.onSignedOut;
       yield* Deferred.succeed(readResult, {
@@ -849,7 +891,7 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
     }),
   );
 
-  it.effect("reports ready and starts sessions without triggering automatic quota reads", () =>
+  it.effect("reports ready and starts sessions during an explicit quota read", () =>
     Effect.gen(function* () {
       const reads = yield* Ref.make(0);
       const readStarted = yield* Deferred.make<void>();
@@ -862,7 +904,7 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
       });
       yield* harness.initialize;
       yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
-      const refresh = yield* harness.provider.snapshot.refresh.pipe(Effect.forkChild);
+      const refresh = yield* harness.provider.snapshot.refreshUsageManual!.pipe(Effect.forkChild);
       yield* Deferred.await(readStarted);
       yield* harness.provider.onSessionStarted(started, "/workspace");
       yield* harness.provider.onSessionStarted(started, "/other");
@@ -894,14 +936,16 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
       const harness = yield* makeHarness({ probeUsage: Ref.get(usage).pipe(Effect.flatten) });
       yield* harness.initialize;
       yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
-      const oldRefresh = yield* harness.provider.snapshot.refresh.pipe(Effect.forkChild);
+      const oldRefresh = yield* harness.provider.snapshot.refreshUsageManual!.pipe(
+        Effect.forkChild,
+      );
       yield* Deferred.await(oldReadStarted);
       yield* Ref.set(usage, Effect.succeed(newLimits));
       yield* harness.provider.onSignedIn;
       yield* Fiber.join(oldRefresh).pipe(Effect.ignore);
       yield* harness.provider.onSessionStarted(started);
       expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toBeUndefined();
-      yield* harness.provider.snapshot.refresh;
+      yield* harness.provider.snapshot.refreshUsageManual!;
       yield* harness.provider.snapshot.awaitUsageRefresh;
       expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(newLimits);
       // Switching again must not republish the previous account's limits, even if the read fails.
@@ -913,7 +957,7 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
       yield* Ref.set(usage, Effect.succeed(failed));
       yield* harness.provider.onSignedIn;
       expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toBeUndefined();
-      yield* harness.provider.snapshot.refresh;
+      yield* harness.provider.snapshot.refreshUsageManual!;
       yield* harness.provider.snapshot.awaitUsageRefresh;
       expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(failed);
     }),

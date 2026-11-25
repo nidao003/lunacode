@@ -54,6 +54,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
+import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { Headers, HttpRouter, HttpServer } from "effect/http";
@@ -1742,6 +1743,180 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
     });
     assert.lengthOf(loaded.providers[0]?.workspaceSnapshots ?? [], 1);
     yield* server.write(0, { _tag: "Interrupt", requestId: lightRequest, interruptors: [] });
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        Layer.fresh(layerConfigSources),
+        Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),
+        Layer.mock(ServerBrowser.ServerBrowser)({}),
+      ),
+    ),
+  ),
+);
+
+it.effect("manualUsageRefresh runs a usage-limit refresh instead of a provider refresh", () =>
+  Effect.gen(function* () {
+    const instanceId = ProviderInstanceId.make("claudeAgent");
+    const provider: ServerProvider = {
+      instanceId,
+      driver: ProviderDriverKind.make("claudeAgent"),
+      enabled: true,
+      installed: true,
+      version: "1.0.0",
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-10-25T00:00:00.000Z",
+      models: [],
+      slashCommands: [],
+      skills: [],
+    };
+    const responses = yield* Queue.unbounded<unknown>();
+    const usageRefreshes = yield* Ref.make<ReadonlyArray<unknown>>([]);
+    let sourceRefreshes = 0;
+    let providerRefreshes = 0;
+    const configRpcServices = Layer.mergeAll(
+      layerUnusedConfigRpcServices,
+      Layer.mock(ExternalLauncher.ExternalLauncher)({
+        resolveAvailableEditors: () => Effect.succeed([]),
+        resolveFileManagerRevealKind: () => Effect.undefined,
+      }),
+      Layer.mock(ProviderRegistry.ProviderRegistry)({
+        getProviders: Effect.succeed([provider]),
+        streamChanges: Stream.make([]),
+        refresh: () =>
+          Effect.sync(() => {
+            providerRefreshes += 1;
+            return [provider];
+          }),
+        awaitUsageRefresh: Effect.void,
+        refreshUsageLimits: (id) =>
+          Effect.gen(function* () {
+            yield* Ref.update(usageRefreshes, (calls) => [...calls, id]);
+            return [provider];
+          }),
+      }),
+      Layer.mock(ProjectService.ProjectService)({
+        workspaceScanDirectory: (cwd) => Effect.succeed(cwd),
+      }),
+      Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
+        listInstances: Effect.succeed([]),
+        getInstance: () => Effect.succeed({ instanceId } as never),
+      }),
+      Layer.mock(UsageLimitSources.UsageLimitSources)({
+        current: Effect.succeed([]),
+        streamChanges: Stream.make([]),
+        refresh: Effect.sync(() => {
+          sourceRefreshes += 1;
+        }),
+      }),
+      Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({
+        resolveTargets: () => Effect.succeed([]),
+      }),
+      Layer.mock(DirectEndpoints.DirectEndpoints)({
+        resolve: () => Effect.succeed([]),
+        resolveAvailable: () => Effect.succeed([]),
+      }),
+      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+        scratchRoot: Effect.succeedNone,
+        namedProjectsRoot: process.cwd(),
+      }),
+      Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
+      Layer.mock(ServerEnvironment.ServerEnvironment)({
+        getDescriptor: Effect.succeed({
+          environmentId: EnvironmentId.make("config-test"),
+          label: "Config test",
+          platform: { os: "linux", arch: "x64" },
+          serverVersion: "0.0.0",
+          capabilities: { repositoryIdentity: false },
+        }),
+      }),
+      Layer.mock(EnvironmentAuth.EnvironmentAuth)({
+        getDescriptor: () =>
+          Effect.succeed({
+            policy: "loopback-browser",
+            bootstrapMethods: [],
+            sessionMethods: ["browser-session-cookie"],
+            sessionCookieName: "config-test-session",
+          }),
+      }),
+    );
+    const server = yield* RpcServer.makeNoSerialization(
+      RpcGroup.make(WsServerRefreshProvidersRpc),
+      {
+        ...WS_RPC_SERVER_OPTIONS,
+        onFromServer: (response) =>
+          response._tag === "Chunk"
+            ? Effect.forEach(response.values, (value) => Queue.offer(responses, value), {
+                discard: true,
+              })
+            : response._tag === "Exit" && response.exit._tag === "Success"
+              ? Queue.offer(responses, response.exit.value)
+              : Effect.void,
+      },
+    ).pipe(
+      Effect.provide(
+        layerWsRpc(
+          {
+            sessionId: AuthSessionId.make("config-test"),
+            subject: "config-test",
+            method: "browser-session-cookie",
+            scopes: [],
+          },
+          {},
+          yield* ServerBrowser.ServerBrowser,
+          () => Effect.void,
+          { secretReferences: true },
+        ).pipe(Layer.provide(configRpcServices)),
+      ),
+    );
+
+    // A manual usage refresh across all instances waits for usage and skips the provider rescan.
+    yield* server.write(0, {
+      _tag: "Request",
+      id: RpcMessage.RequestId("usage-all"),
+      tag: WS_METHODS.serverRefreshProviders,
+      payload: { manualUsageRefresh: true },
+      headers: Headers.empty,
+    });
+    const all = (yield* Queue.take(responses)) as {
+      readonly providers: ReadonlyArray<ServerProvider>;
+    };
+    assert.deepStrictEqual(all.providers, [provider]);
+    assert.deepStrictEqual(yield* Ref.get(usageRefreshes), [undefined]);
+    assert.equal(sourceRefreshes, 1);
+    assert.equal(providerRefreshes, 0);
+
+    // A single instance refreshes only that instance and still returns its snapshot.
+    yield* server.write(0, {
+      _tag: "Request",
+      id: RpcMessage.RequestId("usage-one"),
+      tag: WS_METHODS.serverRefreshProviders,
+      payload: { manualUsageRefresh: true, instanceId },
+      headers: Headers.empty,
+    });
+    const one = (yield* Queue.take(responses)) as {
+      readonly providers: ReadonlyArray<ServerProvider>;
+    };
+    assert.deepStrictEqual(one.providers, [provider]);
+    assert.deepStrictEqual(yield* Ref.get(usageRefreshes), [undefined, instanceId]);
+    assert.equal(sourceRefreshes, 1);
+    assert.equal(providerRefreshes, 0);
+
+    // An ordinary refresh keeps taking the provider path, never the AGY usage probe path.
+    yield* server.write(0, {
+      _tag: "Request",
+      id: RpcMessage.RequestId("refresh-plain"),
+      tag: WS_METHODS.serverRefreshProviders,
+      payload: {},
+      headers: Headers.empty,
+    });
+    const plain = (yield* Queue.take(responses)) as {
+      readonly providers: ReadonlyArray<ServerProvider>;
+    };
+    assert.deepStrictEqual(plain.providers, [provider]);
+    assert.equal(providerRefreshes, 1);
+    assert.equal(sourceRefreshes, 2);
+    assert.deepStrictEqual(yield* Ref.get(usageRefreshes), [undefined, instanceId]);
   }).pipe(
     Effect.provide(
       Layer.mergeAll(

@@ -12,13 +12,17 @@ import {
   nodeRuntimeUnavailableMessage,
 } from "@t3tools/shared/nodeRuntime";
 import * as Digest from "effect/crypto/Digest";
+import * as Hex from "effect/encoding/Hex";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
+import * as HttpClient from "effect/http/HttpClient";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -27,6 +31,9 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as AcpErrors from "effect-acp/errors";
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
+import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
+import { enrichProviderSnapshotWithVersionAdvisory } from "@t3tools/provider-core/server/maintenanceResolver";
+import type { ProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenanceResolver";
 import {
   isAntigravityTextGenerationAvailable,
   makeAntigravityTextGeneration,
@@ -68,7 +75,11 @@ import { makeAcpNativeLoggerFactory } from "@t3tools/provider-acp/server/nativeL
 import { ProviderDriverError } from "../Errors.ts";
 import { makeAntigravityProvider } from "../AntigravityProvider.ts";
 import { makeAntigravityQuotaCache } from "../antigravityQuotaCache.ts";
-import { makeAntigravityUsageProbe } from "../antigravityUsageLimits.ts";
+import {
+  ANTIGRAVITY_USAGE_COOLDOWN_MESSAGE,
+  makeAntigravityUsageProbe,
+  readAntigravityProfileAccountInfo,
+} from "../antigravityUsageLimits.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
 import {
@@ -145,6 +156,32 @@ export const AntigravityDriver: ProviderDriver<
     const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
     const makeNativeLogger = yield* makeAcpNativeLoggerFactory();
     const settings = { ...config, enabled } satisfies AntigravitySettings;
+    const managedRuntime = !settings.binaryPath?.trim();
+    const maintenanceCapabilities: ProviderMaintenanceCapabilities = managedRuntime
+      ? {
+          provider: DRIVER,
+          packageName: null,
+          update: {
+            command: "Update Antigravity",
+            executable: "t3-managed-antigravity-installer",
+            args: [],
+            lockKey: `managed-antigravity:${installation.managedDirectory}`,
+            managedInstaller: { kind: "antigravity" },
+          },
+          latestVersion: null,
+          lookupLatestVersion: installation.checkForUpdate.pipe(
+            Effect.andThen(installation.state),
+            Effect.map((state) => state.version),
+            Effect.orElseSucceed(() => null),
+          ),
+          latestVersionCacheKey: `antigravity-managed:${installation.managedDirectory}`,
+        }
+      : {
+          provider: DRIVER,
+          packageName: null,
+          update: null,
+          latestVersion: null,
+        };
     const auth: AntigravityAuthConfig = {
       authMethod: settings.authMethod,
       // The instance registry has already read a referenced key from its secret provider.
@@ -154,8 +191,9 @@ export const AntigravityDriver: ProviderDriver<
     };
     const authConfigIssue = antigravityAuthConfigIssue(auth);
     const processEnvironment = yield* mergeProviderInstanceEnvironment(environment);
+    const hostPlatform = yield* HostProcess.Platform;
     const userHome = resolveAntigravityUserHome(
-      yield* HostProcess.Platform,
+      hostPlatform,
       processEnvironment,
       yield* HostProcess.HomeDirectory,
     );
@@ -197,10 +235,27 @@ export const AntigravityDriver: ProviderDriver<
       accentColor,
       continuationGroupKey: continuationIdentity.continuationKey,
     });
-    const classifyModels = (draft: ServerProviderDraft) =>
-      currentCatalog.pipe(
-        Effect.map((catalog) => stampIdentity(ModelCatalog.applyModelCatalog(draft, catalog))),
+    const classifyModels = Effect.fn("AntigravityDriver.classifyModels")(function* (
+      draft: ServerProviderDraft,
+    ) {
+      const catalog = yield* currentCatalog;
+      const snapshot = stampIdentity(ModelCatalog.applyModelCatalog(draft, catalog));
+      const httpClient = yield* Effect.serviceOption(HttpClient.HttpClient);
+      const latestVersions = yield* Effect.serviceOption(
+        ProviderLatestVersions.ProviderLatestVersions,
       );
+      if (Option.isNone(httpClient) || Option.isNone(latestVersions)) return snapshot;
+      const enableProviderUpdateChecks = yield* host.settings.get.pipe(
+        Effect.map((serverSettings) => serverSettings.enableProviderUpdateChecks !== false),
+        Effect.orElseSucceed(() => true),
+      );
+      return yield* enrichProviderSnapshotWithVersionAdvisory(snapshot, maintenanceCapabilities, {
+        enableProviderUpdateChecks,
+      }).pipe(
+        Effect.provideService(HttpClient.HttpClient, httpClient.value),
+        Effect.provideService(ProviderLatestVersions.ProviderLatestVersions, latestVersions.value),
+      );
+    });
 
     const prepareSpawn = Effect.fn("AntigravityDriver.prepareSpawn")(function* (
       cwd: string,
@@ -554,14 +609,53 @@ export const AntigravityDriver: ProviderDriver<
       };
     });
 
+    const usageCooldownKey = Hex.encode(
+      yield* digest.digest(Digest.sha256, new TextEncoder().encode(`agy-cooldown\0${instanceId}`)),
+    );
+    const discoveredEmailRef = yield* Ref.make<string | undefined>(undefined);
+    const resolveAccountInfo = Effect.gen(function* () {
+      if (auth.authMethod !== "oauth-personal") {
+        return undefined;
+      }
+      const info = yield* Effect.promise(() =>
+        readAntigravityProfileAccountInfo({
+          profileDirectory,
+          authMethod: auth.authMethod,
+        }),
+      );
+      if (!info.hasToken) {
+        yield* Ref.set(discoveredEmailRef, undefined);
+        return { hasToken: false } as const;
+      }
+      const cachedEmail = yield* Ref.get(discoveredEmailRef);
+      const email = info.email ?? cachedEmail;
+      if (info.email) {
+        yield* Ref.set(discoveredEmailRef, info.email);
+      }
+      return {
+        hasToken: true,
+        ...(email ? { email } : {}),
+      } as const;
+    });
+    const currentAccountEmail = resolveAccountInfo.pipe(
+      Effect.map((info) => (info?.hasToken ? info.email : undefined)),
+    );
     const usage = yield* makeAntigravityUsageProbe({
       profileDirectory,
       authMethod: auth.authMethod,
+      platform: hostPlatform,
       resolveExecutable: installation.resolve(settings.binaryPath, processEnvironment).pipe(
         Effect.map((executable) => executable.executablePath),
         Effect.orElseSucceed(() => undefined),
       ),
       baseEnv: processEnvironment,
+      cooldownStatePath: path.join(
+        host.paths.stateDir,
+        "lunacode",
+        "agy-quota-cache",
+        `${usageCooldownKey}.json`,
+      ),
+      onAccountEmail: (email) => Ref.set(discoveredEmailRef, email),
     }).pipe(
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, path),
@@ -575,17 +669,29 @@ export const AntigravityDriver: ProviderDriver<
     });
     const probeUsage = Effect.gen(function* () {
       const probed = yield* usage.probe;
-      if (probed.unavailable) return yield* quotaCache.recover(probed, undefined);
-      yield* quotaCache.persist(probed, undefined, undefined);
+      const email = yield* currentAccountEmail;
+      if (probed.unavailable?.message === ANTIGRAVITY_USAGE_COOLDOWN_MESSAGE) {
+        const cached = yield* quotaCache.hydrate(email);
+        return cached ?? probed;
+      }
+      if (probed.unavailable) return yield* quotaCache.recover(probed, email);
+      yield* quotaCache.persist(probed, email, undefined);
       return probed;
     });
     const provider = yield* makeAntigravityProvider(settings, {
       environment: processEnvironment,
       stampIdentity: classifyModels,
       probe,
+      readAccountInfo: resolveAccountInfo,
       probeUsage,
-      readCachedUsage: quotaCache.hydrate(),
-      clearUsage: usage.clear.pipe(Effect.andThen(quotaCache.clear())),
+      readCachedUsage: currentAccountEmail.pipe(
+        Effect.flatMap((email) => quotaCache.hydrate(email)),
+      ),
+      clearUsage: usage.clear.pipe(
+        Effect.andThen(quotaCache.clear()),
+        Effect.andThen(Ref.set(discoveredEmailRef, undefined)),
+      ),
+      maintenanceCapabilities,
       auth: { type: auth.authMethod, label: antigravityAuthLabel(auth.authMethod) },
       supportsTextGeneration:
         auth.authMethod === "oauth-personal"

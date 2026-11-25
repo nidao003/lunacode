@@ -2499,6 +2499,15 @@ export const layerWsRpc = (
         [WS_METHODS.serverRefreshProviders]:
           /* Request instrumentation already owns the span; keep this helper in that context. */
           Effect.fnUntraced(function* (input) {
+            if (input.manualUsageRefresh === true) {
+              if (input.instanceId === undefined) {
+                yield* usageLimitSources.refresh;
+              }
+              const providers = yield* input.instanceId !== undefined
+                ? providerRegistry.refreshUsageLimits(input.instanceId)
+                : providerRegistry.refreshUsageLimits();
+              return { providers };
+            }
             if (input.modelCatalogOnly === true) {
               yield* providerRegistry.refreshModelCatalog;
               return { providers: [] };
@@ -3736,7 +3745,9 @@ export const layer = Layer.unwrap(
           ];
         }
         const clientAnalyticsProps = readClientAnalyticsProps(request);
-        yield* analytics.recordOwners(readClientOwners(request), "client");
+        if (yield* analytics.isEnabled) {
+          yield* analytics.recordOwners(readClientOwners(request), "client");
+        }
         const reportProfiles = yield* serverBrowser.profileReporter;
         const rpcWebSocketHttpEffect = yield* Effect.gen(function* () {
           const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;

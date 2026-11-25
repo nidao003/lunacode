@@ -22,6 +22,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -43,7 +45,12 @@ import {
   providerModelsFromSettings,
   providerProbeEnvironment,
 } from "@t3tools/provider-core/server/snapshotProbe";
-import { makeManualOnlyProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenanceResolver";
+import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
+import {
+  enrichProviderSnapshotWithVersionAdvisory,
+  makeManualOnlyProviderMaintenanceCapabilities,
+  type ProviderMaintenanceCapabilities,
+} from "@t3tools/provider-core/server/maintenanceResolver";
 import {
   haveProviderSnapshotSettingsChanged,
   makeProviderSnapshotSettingsSource,
@@ -136,6 +143,35 @@ const MAINTENANCE = makeManualOnlyProviderMaintenanceCapabilities({
   provider: DRIVER_KIND,
   packageName: null,
 });
+const KIMI_CODE_NPM_PACKAGE = "@moonshot-ai/kimi-code";
+const NpmLatestVersion = Schema.Struct({ version: Schema.String });
+
+const lookupKimiCodeNpmLatest = (client: HttpClient.HttpClient) =>
+  client
+    .execute(
+      HttpClientRequest.get(
+        `https://registry.npmjs.org/${encodeURIComponent(KIMI_CODE_NPM_PACKAGE)}/latest`,
+      ).pipe(HttpClientRequest.setHeader("accept", "application/json")),
+    )
+    .pipe(
+      Effect.flatMap(HttpClientResponse.filterStatusOk),
+      Effect.flatMap(HttpClientResponse.schemaBodyJson(NpmLatestVersion)),
+      Effect.timeout("10 seconds"),
+      Effect.map(({ version }) => version),
+      Effect.orElseSucceed(() => null),
+    );
+
+const acpRegistryInspectionVersion = (
+  inspection: AcpRegistrySupport.AcpRegistryInspection,
+): string | null => {
+  switch (inspection.status) {
+    case "unconfigured":
+    case "not_found":
+      return null;
+    default:
+      return inspection.version;
+  }
+};
 
 const makeUnsupportedTextGeneration = (): ProviderTextGeneration => {
   const unsupported = (operation: string) =>
@@ -761,22 +797,83 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
       effectiveConfig.source !== "local"
         ? effectiveConfig.agentId === "kimi-code" || effectiveConfig.agentId === "kimi"
         : /^kimi(\.exe|\.cmd)?$/i.test(effectiveConfig.commandPath.split(/[\\/]/).pop() ?? "");
+    const kimiAgentId = effectiveConfig.agentId.trim();
+    const kimiMaintenance: ProviderMaintenanceCapabilities = !isKimi
+      ? MAINTENANCE
+      : effectiveConfig.source === "local"
+        ? {
+            provider: DRIVER_KIND,
+            packageName: KIMI_CODE_NPM_PACKAGE,
+            update: {
+              command: `${effectiveConfig.commandPath.trim() || "kimi"} upgrade --yes`,
+              executable: effectiveConfig.commandPath.trim() || "kimi",
+              args: ["upgrade", "--yes"],
+              lockKey: "kimi-native",
+            },
+            latestVersion: null,
+            lookupLatestVersion: lookupKimiCodeNpmLatest(httpClient),
+            latestVersionCacheKey: `kimi-native:${KIMI_CODE_NPM_PACKAGE}`,
+          }
+        : kimiAgentId.length === 0 || effectiveConfig.commandPath.trim()
+          ? MAINTENANCE
+          : {
+              provider: DRIVER_KIND,
+              packageName: null,
+              update: {
+                command: `Update ${kimiAgentId}`,
+                executable: "t3-managed-acp-registry-installer",
+                args: [],
+                lockKey: `managed-acp-registry:${kimiAgentId}`,
+                managedInstaller: { kind: "acpRegistryAgent", agentId: kimiAgentId },
+              },
+              latestVersion: null,
+              lookupLatestVersion: catalog.inspect(effectiveConfig, processEnvironment).pipe(
+                Effect.map(acpRegistryInspectionVersion),
+                Effect.orElseSucceed(() => null),
+              ),
+              latestVersionCacheKey: `acp-registry-agent:${kimiAgentId}`,
+            };
+    const withKimiVersionAdvisory = Effect.fn("AcpRegistryDriver.withKimiVersionAdvisory")(
+      function* (provider: ServerProvider) {
+        if (!isKimi) return provider;
+        const latestVersions = yield* Effect.serviceOption(
+          ProviderLatestVersions.ProviderLatestVersions,
+        );
+        if (Option.isNone(latestVersions)) return provider;
+        const enableProviderUpdateChecks = yield* host.settings.get.pipe(
+          Effect.map((serverSettings) => serverSettings.enableProviderUpdateChecks !== false),
+          Effect.orElseSucceed(() => true),
+        );
+        return yield* enrichProviderSnapshotWithVersionAdvisory(provider, kimiMaintenance, {
+          enableProviderUpdateChecks,
+        }).pipe(
+          Effect.provideService(HttpClient.HttpClient, httpClient),
+          Effect.provideService(
+            ProviderLatestVersions.ProviderLatestVersions,
+            latestVersions.value,
+          ),
+        );
+      },
+    );
     const withKimiLimits = Effect.fn("AcpRegistryDriver.withKimiLimits")(
       function* (provider: ServerProvider) {
         if (!isKimi) return provider;
         const probe = yield* readKimiUsageLimits({
           configuredHome: processEnvironment.KIMI_CODE_HOME,
         }).pipe(Effect.orElseSucceed(() => undefined));
-        if (probe === undefined) return provider;
-        return {
-          ...provider,
-          auth: {
-            ...provider.auth,
-            ...(probe.email ? { email: probe.email } : {}),
-            ...(probe.label ? { label: probe.label } : {}),
-          },
-          usageLimits: probe.usageLimits,
-        } satisfies ServerProvider;
+        const withLimits =
+          probe === undefined
+            ? provider
+            : ({
+                ...provider,
+                auth: {
+                  ...provider.auth,
+                  ...(probe.email ? { email: probe.email } : {}),
+                  ...(probe.label ? { label: probe.label } : {}),
+                },
+                usageLimits: probe.usageLimits,
+              } satisfies ServerProvider);
+        return yield* withKimiVersionAdvisory(withLimits);
       },
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, path),
@@ -863,7 +960,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
     const snapshot = yield* makeManagedServerProvider<
       ProviderSnapshotSettings<AcpRegistrySettings>
     >({
-      resolveMaintenance: () => Effect.succeed(MAINTENANCE),
+      resolveMaintenance: () => Effect.succeed(kimiMaintenance),
       getSettings: snapshotSettings.getSettings,
       streamSettings: snapshotSettings.streamSettings,
       haveSettingsChanged: haveProviderSnapshotSettingsChanged,

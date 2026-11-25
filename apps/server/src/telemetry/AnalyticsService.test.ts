@@ -7,6 +7,7 @@ import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -431,8 +432,17 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService
       yield* Effect.gen(function* () {
         yield* Layer.launch(layerBatchServer).pipe(Effect.forkScoped);
         const analytics = yield* AnalyticsService.AnalyticsService;
+        assert.equal(yield* analytics.isEnabled, false);
         yield* analytics.record("test.disabled", { index: 1 });
+        yield* analytics.recordOwners([{ source: "openai", ownerId: "a".repeat(64) }], "server");
         yield* analytics.flush;
+        // Disabled telemetry must not even build an install identity, let alone read provider
+        // login files, so no anonymous-id file may appear.
+        const config = yield* ServerConfig.ServerConfig;
+        const anonymousIdExists = yield* FileSystem.FileSystem.pipe(
+          Effect.flatMap((fs) => fs.exists(config.anonymousIdPath)),
+        );
+        assert.equal(anonymousIdExists, false);
       }).pipe(Effect.provide(layerRuntime));
 
       assert.deepEqual(capturedPaths, []);

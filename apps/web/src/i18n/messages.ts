@@ -1,3 +1,4 @@
+import { rebrandTextToLunaCode } from "@t3tools/client-runtime/lunacode/brand-display";
 import { decodeOptions, getReactI18nCache, gtFallback, type useMessages } from "gt-react";
 
 import { DEFAULT_LOCALE } from "./locales";
@@ -26,9 +27,11 @@ function resolve(message: string, variables: Parameters<MessageResolver>[1] = {}
       ? undefined
       : getReactI18nCache().lookupTranslation(activeLocale, source, { ...options, $format: "ICU" });
   // Untranslated text is English, so it takes English plural rules.
-  return typeof target === "string"
-    ? gtFallback(target, { ...options, $locale: activeLocale, $_fallback: source })
-    : gtFallback(source, { ...options, $locale: DEFAULT_LOCALE });
+  return rebrandTextToLunaCode(
+    typeof target === "string"
+      ? gtFallback(target, { ...options, $locale: activeLocale, $_fallback: source })
+      : gtFallback(source, { ...options, $locale: DEFAULT_LOCALE }),
+  );
 }
 
 /**

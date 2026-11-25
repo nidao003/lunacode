@@ -56,6 +56,8 @@ export interface AntigravityQuotaCache {
     probed: ServerProviderUsageLimits,
     email: string | undefined,
   ) => Effect.Effect<ServerProviderUsageLimits>;
+  /** Hydrates cached windows matching the current account email (or anonymous cache if omitted). */
+  readonly hydrate: (email?: string) => Effect.Effect<ServerProviderUsageLimits | undefined>;
   /** Reads the cached subscription tier for the matching stored email when live probe is absent. */
   readonly readPlan: (email: string | undefined) => Effect.Effect<string | undefined>;
 }
@@ -125,9 +127,17 @@ export const makeAntigravityQuotaCache = Effect.fn("makeAntigravityQuotaCache")(
     };
   });
 
-  const hydrate = Effect.fn("AntigravityQuotaCache.hydrate")(function* () {
+  const hydrate = Effect.fn("AntigravityQuotaCache.hydrate")(function* (email?: string) {
     const cached = yield* readCached;
-    if (!cached || cached.account.emailHash !== undefined) return undefined;
+    if (!cached) return undefined;
+    const hashed = yield* emailKey(email);
+    if (
+      hashed === undefined
+        ? cached.account.emailHash !== undefined
+        : cached.account.emailHash !== hashed
+    ) {
+      return undefined;
+    }
     if (cached.limits.windows.length === 0) return undefined;
     if (!Number.isFinite(Date.parse(cached.limits.checkedAt))) return undefined;
     return {
@@ -169,7 +179,7 @@ export const makeAntigravityQuotaCache = Effect.fn("makeAntigravityQuotaCache")(
       withServices(persist(limits, email, plan)),
     recover: (probed: ServerProviderUsageLimits, email: string | undefined) =>
       withServices(recover(probed, email)),
-    hydrate: () => withServices(hydrate()),
+    hydrate: (email?: string) => withServices(hydrate(email)),
     clear: () => withServices(clear()),
     readPlan: (email: string | undefined) => withServices(readPlan(email)),
   };

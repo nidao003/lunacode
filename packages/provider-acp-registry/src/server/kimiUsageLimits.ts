@@ -7,6 +7,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
@@ -74,6 +75,42 @@ const Usages = Schema.Struct({
 
 const decodeCredential = Schema.decodeUnknownEffect(Schema.fromJsonString(Credential));
 const encodeCredential = Schema.encodeEffect(Schema.fromJsonString(Credential));
+const TokenErrorResponse = Schema.Struct({ error: Schema.optional(Schema.String) });
+const decodeTokenError = Schema.decodeUnknownOption(TokenErrorResponse);
+
+const writeCredentialAtomic = Effect.fn("writeKimiCredentialAtomic")(function* (
+  fs: FileSystem.FileSystem,
+  credentialPath: string,
+  credential: typeof Credential.Type,
+) {
+  const encoded = yield* encodeCredential(credential).pipe(Effect.orElseSucceed(() => undefined));
+  if (encoded === undefined) return false;
+  const stagingPath = `${credentialPath}.${process.pid}.tmp`;
+  return yield* Effect.gen(function* () {
+    yield* fs.writeFileString(stagingPath, encoded, { mode: 0o600 });
+    yield* fs.rename(stagingPath, credentialPath);
+    return true;
+  }).pipe(
+    Effect.catch(() =>
+      fs.remove(stagingPath, { force: true }).pipe(Effect.ignore({ log: true }), Effect.as(false)),
+    ),
+  );
+});
+
+const writeCredentialTombstone = Effect.fn("writeKimiCredentialTombstone")(function* (
+  fs: FileSystem.FileSystem,
+  credentialPath: string,
+  prior: typeof Credential.Type,
+) {
+  return yield* writeCredentialAtomic(fs, credentialPath, {
+    access_token: "",
+    refresh_token: "",
+    expires_at: 0,
+    expires_in: 0,
+    token_type: prior.token_type ?? "Bearer",
+    scope: prior.scope ?? "",
+  });
+});
 
 const CLIENT_ID = "17e5f671-d194-4dfb-9706-5516cb48c098";
 const REFRESH_ENDPOINT = "https://auth.kimi.com/api/oauth/token";
@@ -82,9 +119,13 @@ const LOCK_STALE_MS = 5_000;
 const LOCK_RETRY = "250 millis";
 const LOCK_ATTEMPTS = 40;
 const AUTH_TIMEOUT = "15 seconds";
+const LOCK_HEARTBEAT = "1 second";
 
-/** Kimi's own rule: refresh once less than five minutes remain. */
-const REFRESH_MARGIN_SECONDS = 300;
+/** Kimi's own rule: refresh once less than five minutes, or half the lifetime, remain. */
+const refreshThresholdSeconds = (credential: typeof Credential.Type) => {
+  const expiresIn = credential.expires_in ?? 0;
+  return expiresIn > 0 ? Math.max(300, Math.floor(expiresIn / 2)) : 300;
+};
 export const KIMI_QUOTA_CACHE_TTL_MS = 5 * 60_000;
 
 interface CachedKimiProbe {
@@ -177,6 +218,26 @@ export function kimiUsagesWindows(response: typeof Usages.Type, checkedAt: strin
     ? makeUsageLimits({ checkedAt, windows: windows.values() })
     : makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" });
 }
+
+const prepareLockTarget = Effect.fn("kimiPrepareLockTarget")(function* (
+  lockPath: string,
+  lockDirectory: string,
+  fs: FileSystem.FileSystem,
+) {
+  const lockTarget = lockPath.replace(/\.lock$/u, "");
+  yield* fs.makeDirectory(lockDirectory, { recursive: true });
+  if (!(yield* fs.exists(lockTarget).pipe(Effect.orElseSucceed(() => false)))) {
+    yield* fs.writeFileString(lockTarget, "", { mode: 0o600 });
+  }
+});
+
+const touchRefreshLock = Effect.fn("kimiTouchRefreshLock")(function* (
+  lockPath: string,
+  fs: FileSystem.FileSystem,
+) {
+  const nowSeconds = (yield* Clock.currentTimeMillis) / 1000;
+  yield* fs.utimes(lockPath, nowSeconds, nowSeconds).pipe(Effect.ignore({ log: true }));
+});
 
 const refreshLock = Effect.fn("kimiRefreshLock")(function* (
   lockPath: string,
@@ -293,7 +354,7 @@ const usableAccessToken = Effect.fn("usableKimiAccessToken")(function* (input: {
     if (!credential?.access_token) return { status: "missing" } as const;
     const nowSeconds = Math.floor((yield* Clock.currentTimeMillis) / 1_000);
     const expiresAt = credential.expires_at ?? 0;
-    if (expiresAt > nowSeconds + REFRESH_MARGIN_SECONDS) {
+    if (expiresAt > nowSeconds + refreshThresholdSeconds(credential)) {
       return { status: "ok", token: credential.access_token } as const;
     }
     if ((yield* HostProcess.Platform) === "win32") {
@@ -307,10 +368,9 @@ const usableAccessToken = Effect.fn("usableKimiAccessToken")(function* (input: {
     if (!credential.refresh_token) return { status: "missing" } as const;
 
     const lockName = input.path.basename(input.credentialPath, ".json");
-    const lockPath = input.path.join(input.home, "oauth", `${lockName}.lock`);
-    yield* input.fs.makeDirectory(input.path.dirname(lockPath), {
-      recursive: true,
-    });
+    const lockDirectory = input.path.join(input.home, "oauth");
+    const lockPath = input.path.join(lockDirectory, `${lockName}.lock`);
+    yield* prepareLockTarget(lockPath, lockDirectory, input.fs);
     const acquired = yield* refreshLock(lockPath, input.fs);
     if (!acquired) return { status: "ok", token: credential.access_token } as const;
 
@@ -321,37 +381,79 @@ const usableAccessToken = Effect.fn("usableKimiAccessToken")(function* (input: {
         Effect.orElseSucceed(() => credential),
       );
       const currentExpiry = current.expires_at ?? 0;
-      if (currentExpiry > nowSeconds + REFRESH_MARGIN_SECONDS && current.access_token) {
+      if (currentExpiry > nowSeconds + refreshThresholdSeconds(current) && current.access_token) {
         return { status: "ok", token: current.access_token } as const;
       }
-      const refreshed = yield* input.client
-        .execute(
-          HttpClientRequest.post(REFRESH_ENDPOINT).pipe(
-            HttpClientRequest.setHeaders({
-              Accept: "application/json",
-              ...(input.deviceId ? { "X-Msh-Device-Id": input.deviceId } : {}),
-              "X-Msh-Platform": "kimi_code_cli",
-            }),
-            HttpClientRequest.bodyUrlParams({
-              client_id: CLIENT_ID,
-              grant_type: "refresh_token",
-              refresh_token: current.refresh_token ?? "",
-            }),
-          ),
-        )
-        .pipe(
-          Effect.flatMap(HttpClientResponse.filterStatusOk),
-          Effect.flatMap(HttpClientResponse.schemaBodyJson(TokenResponse)),
-          Effect.timeout(AUTH_TIMEOUT),
+
+      const heartbeat = yield* Effect.forever(
+        Effect.sleep(LOCK_HEARTBEAT).pipe(Effect.andThen(touchRefreshLock(lockPath, input.fs))),
+      ).pipe(Effect.forkDetach);
+
+      const refreshed = yield* Effect.gen(function* () {
+        const response = yield* input.client
+          .execute(
+            HttpClientRequest.post(REFRESH_ENDPOINT).pipe(
+              HttpClientRequest.setHeaders({
+                Accept: "application/json",
+                ...(input.deviceId ? { "X-Msh-Device-Id": input.deviceId } : {}),
+                "X-Msh-Platform": "kimi_code_cli",
+              }),
+              HttpClientRequest.bodyUrlParams({
+                client_id: CLIENT_ID,
+                grant_type: "refresh_token",
+                refresh_token: current.refresh_token ?? "",
+              }),
+            ),
+          )
+          .pipe(Effect.timeout(AUTH_TIMEOUT));
+        if (response.status === 200) {
+          const tokens = yield* HttpClientResponse.schemaBodyJson(TokenResponse)(response);
+          return { status: "refreshed" as const, ...tokens };
+        }
+        const body: unknown = yield* response.json.pipe(Effect.orElseSucceed(() => undefined));
+        const tokenError = Option.getOrUndefined(decodeTokenError(body));
+        if (
+          response.status !== 401 &&
+          response.status !== 403 &&
+          tokenError?.error !== "invalid_grant"
+        ) {
+          return undefined;
+        }
+        // Kimi rotates refresh tokens. If another process won while we held the lock, adopt its
+        // credential; otherwise mark this login revoked with Kimi's tombstone format.
+        const recovered = yield* input.fs.readFileString(input.credentialPath).pipe(
+          Effect.flatMap(decodeCredential),
           Effect.orElseSucceed(() => undefined),
         );
-      if (!refreshed) {
+        if (
+          recovered?.refresh_token &&
+          recovered.refresh_token !== current.refresh_token &&
+          recovered.access_token
+        ) {
+          return { status: "adopted", access_token: recovered.access_token } as const;
+        }
+        yield* writeCredentialTombstone(input.fs, input.credentialPath, current).pipe(
+          Effect.ignore({ log: true }),
+        );
+        return { status: "missing" } as const;
+      }).pipe(
+        Effect.catch(() => Effect.undefined),
+        Effect.ensuring(Fiber.interrupt(heartbeat).pipe(Effect.ignore)),
+      );
+
+      if (refreshed?.status === "missing") {
+        return { status: "missing" } as const;
+      }
+      if (refreshed?.status === "adopted") {
+        return { status: "ok", token: refreshed.access_token } as const;
+      }
+      if (!refreshed || refreshed.status !== "refreshed" || !refreshed.access_token) {
         return {
           status: "ok",
           token: current.access_token ?? credential.access_token ?? "",
         } as const;
       }
-      const next = yield* encodeCredential({
+      const wrote = yield* writeCredentialAtomic(input.fs, input.credentialPath, {
         ...current,
         access_token: refreshed.access_token,
         refresh_token: refreshed.refresh_token ?? current.refresh_token,
@@ -359,13 +461,11 @@ const usableAccessToken = Effect.fn("usableKimiAccessToken")(function* (input: {
         expires_in: refreshed.expires_in ?? current.expires_in ?? 900,
         token_type: refreshed.token_type ?? current.token_type ?? "Bearer",
         scope: refreshed.scope ?? current.scope ?? "",
-      }).pipe(Effect.orElseSucceed(() => undefined));
-      if (next) {
-        yield* input.fs
-          .writeFileString(input.credentialPath, next, { mode: 0o600 })
-          .pipe(Effect.ignore({ log: true }));
-      }
-      return { status: "ok", token: refreshed.access_token } as const;
+      });
+      return {
+        status: "ok",
+        token: wrote ? refreshed.access_token : (current.access_token ?? ""),
+      } as const;
     }).pipe(Effect.ensuring(input.fs.remove(lockPath, { recursive: true }).pipe(Effect.ignore)));
   });
 

@@ -24,6 +24,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as NodeUtil from "node:util";
 
 import * as ModelManifest from "./ModelManifest.ts";
+import * as AntigravityInstallation from "./AntigravityInstallation.ts";
 import * as ProviderInstallationGate from "./ProviderInstallationGate.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
 import { makeProviderMaintenanceCommandCoordinator } from "./providerMaintenanceCommandCoordinator.ts";
@@ -38,6 +39,7 @@ import {
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import type { ProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenanceResolver";
 import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
+import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
 const isServerProviderUpdateError = Schema.is(ServerProviderUpdateError);
 
 // Native updaters (`claude update`) download a ~300 MB binary without printing
@@ -243,6 +245,12 @@ export function toProgressLine(line: string): string | null {
 }
 
 function describeCommand(command: ProviderMaintenanceCommandAction): string {
+  if (command.managedInstaller?.kind === "antigravity") {
+    return "the managed Antigravity installer";
+  }
+  if (command.managedInstaller?.kind === "acpRegistryAgent") {
+    return `the managed ACP Registry installer for ${command.managedInstaller.agentId}`;
+  }
   const executable = command.executable.split(/[\\/]/).pop() || command.executable;
   return [executable, ...command.args].join(" ");
 }
@@ -364,6 +372,116 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
         reason: "An update is already running for this provider.",
       }),
   });
+  const antigravityInstallation = yield* Effect.serviceOption(
+    AntigravityInstallation.AntigravityInstallation,
+  );
+  const runManagedAntigravityInstall = Effect.fn("ProviderMaintenanceRunner.managedAntigravity")(
+    function* (onProgress: (line: string) => Effect.Effect<void>) {
+      if (Option.isNone(antigravityInstallation)) {
+        return {
+          stdout: "",
+          stderr: "The managed Antigravity installer is unavailable on this environment.",
+          exitCode: 1,
+          timedOut: false,
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        } satisfies ProviderMaintenanceCommandResult;
+      }
+      const installation = antigravityInstallation.value;
+      const report = (message: string | null) =>
+        message === null ? Effect.void : onProgress(message);
+      const started = yield* installation.start;
+      yield* report(started.message);
+      const installResult = (state: {
+        readonly phase: string;
+        readonly message: string | null;
+        readonly installedVersion: string | null;
+      }): ProviderMaintenanceCommandResult => ({
+        stdout:
+          state.phase === "succeeded"
+            ? `Installed Antigravity ${state.installedVersion ?? started.version ?? ""}`.trim()
+            : "",
+        stderr:
+          state.phase === "succeeded"
+            ? ""
+            : (state.message ?? "The managed Antigravity installation did not finish."),
+        exitCode: state.phase === "succeeded" ? 0 : 1,
+        timedOut: false,
+        stdoutTruncated: false,
+        stderrTruncated: false,
+      });
+      if (
+        started.phase !== "downloading" &&
+        started.phase !== "extracting" &&
+        started.phase !== "verifying"
+      ) {
+        return installResult(started);
+      }
+      const finished = yield* Stream.concat(
+        Stream.fromEffect(installation.state),
+        installation.changes,
+      ).pipe(
+        Stream.tap((state) =>
+          state.operationId === started.operationId ? report(state.message) : Effect.void,
+        ),
+        Stream.filter(
+          (state) =>
+            state.operationId === started.operationId &&
+            (state.phase === "succeeded" ||
+              state.phase === "failed" ||
+              state.phase === "cancelled"),
+        ),
+        Stream.runHead,
+        Effect.map(Option.getOrUndefined),
+      );
+      return installResult(
+        finished ?? {
+          phase: "failed",
+          message: "The managed Antigravity installation ended without a final state.",
+          installedVersion: null,
+        },
+      );
+    },
+  );
+
+  const acpRegistryCatalog = yield* Effect.serviceOption(AcpRegistrySupport.AcpRegistryCatalog);
+  const runManagedAcpRegistryInstall = Effect.fn("ProviderMaintenanceRunner.managedAcpRegistry")(
+    function* (
+      installer: Extract<
+        NonNullable<ProviderMaintenanceCommandAction["managedInstaller"]>,
+        { readonly kind: "acpRegistryAgent" }
+      >,
+      onProgress: (line: string) => Effect.Effect<void>,
+    ) {
+      if (Option.isNone(acpRegistryCatalog)) {
+        return {
+          stdout: "",
+          stderr: "The managed ACP Registry installer is unavailable on this environment.",
+          exitCode: 1,
+          timedOut: false,
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        } satisfies ProviderMaintenanceCommandResult;
+      }
+      yield* onProgress(`Checking ${installer.agentId}`);
+      const prepared = yield* acpRegistryCatalog.value
+        .prepare({ agentId: installer.agentId })
+        .pipe(
+          Effect.mapError(
+            (cause) => new ProviderMaintenanceCommandError({ message: cause.message, cause }),
+          ),
+        );
+      yield* onProgress(`Prepared ${installer.agentId} ${prepared.version}`);
+      return {
+        stdout: `Prepared ${installer.agentId} ${prepared.version}`,
+        stderr: "",
+        exitCode: 0,
+        timedOut: false,
+        stdoutTruncated: false,
+        stderrTruncated: false,
+      } satisfies ProviderMaintenanceCommandResult;
+    },
+  );
 
   const verifyFromRefresh = (
     refresh: Effect.Effect<ReadonlyArray<ServerProvider>>,
@@ -588,7 +706,13 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
             const result = yield* installationGate.update(
               sharingInstances,
               setRunningMessage(`Running ${describeCommand(command)}`).pipe(
-                Effect.andThen(runMaintenanceCommand(command, setRunningMessage)),
+                Effect.andThen(
+                  command.managedInstaller?.kind === "antigravity"
+                    ? runManagedAntigravityInstall(setRunningMessage)
+                    : command.managedInstaller?.kind === "acpRegistryAgent"
+                      ? runManagedAcpRegistryInstall(command.managedInstaller, setRunningMessage)
+                      : runMaintenanceCommand(command, setRunningMessage),
+                ),
               ),
             );
             const finishedAt = yield* nowIso;

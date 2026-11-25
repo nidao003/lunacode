@@ -1,3 +1,4 @@
+import { rebrandCatalogToLunaCode } from "@t3tools/client-runtime/lunacode/brand-display";
 import { initializeGTSPA } from "gt-react";
 
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from "./locales";
@@ -6,7 +7,7 @@ import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from "./locales";
 async function loadTranslations(locale: string): Promise<unknown> {
   if (locale === DEFAULT_LOCALE) return {};
   const module: { default: unknown } = await import(`./translations/${locale}.json`);
-  return module.default;
+  return rebrandCatalogToLunaCode(module.default);
 }
 
 /** Sets up GT's singletons. `onLocaleRequest` receives GT's own locale changes. */

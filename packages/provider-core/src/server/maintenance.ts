@@ -21,6 +21,10 @@ export interface ProviderMaintenanceCapabilities {
   readonly manualCommand?: string;
 }
 
+export type ProviderManagedInstallerAction =
+  | { readonly kind: "antigravity" }
+  | { readonly kind: "acpRegistryAgent"; readonly agentId: string };
+
 export interface ProviderMaintenanceCommandAction {
   readonly command: string;
   readonly executable: string;
@@ -28,4 +32,6 @@ export interface ProviderMaintenanceCommandAction {
   readonly lockKey: string;
   /** The provider's environment, including its PATH and custom home. */
   readonly env?: NodeJS.ProcessEnv;
+  /** Internal installer service to invoke instead of spawning `executable`. */
+  readonly managedInstaller?: ProviderManagedInstallerAction;
 }

@@ -73,6 +73,7 @@ const removedEnvironmentKeys = new Set([
   "AGY_ACP_ENABLE_OAUTH",
   "GEMINI_HOME",
   "AGY_ACP_FORCE_FILE_STORAGE",
+  "AGY_CLI_FORCE_FILE_TOKEN_STORAGE",
   "AGY_CLI_DISABLE_AUTO_UPDATE",
   "BROWSER",
   "PYTHONUNBUFFERED",
@@ -228,7 +229,8 @@ function antigravityEnvironment(
       ? { SSL_CERT_FILE: profile.caBundlePath }
       : {}),
     GEMINI_HOME: profile.geminiHome,
-    AGY_CLI_DISABLE_AUTO_UPDATE: "1",
+    AGY_CLI_DISABLE_AUTO_UPDATE: "true",
+    ...(auth.authMethod === "oauth-personal" ? { AGY_CLI_FORCE_FILE_TOKEN_STORAGE: "1" } : {}),
     BROWSER: profile.browserCommand,
     PYTHONUNBUFFERED: "1",
     ELECTRON_RUN_AS_NODE: "1",

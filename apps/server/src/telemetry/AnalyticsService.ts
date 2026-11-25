@@ -83,6 +83,7 @@ const TelemetryEnvConfig = Config.all({
 export class AnalyticsService extends Context.Service<
   AnalyticsService,
   {
+    readonly isEnabled: Effect.Effect<boolean>;
     readonly record: (
       event: string,
       properties?: Readonly<Record<string, unknown>>,
@@ -147,7 +148,10 @@ export const make = Effect.gen(function* () {
   });
   const httpClient = yield* HttpClient.HttpClient;
   const serverConfig = yield* ServerConfig.ServerConfig;
-  const { distinctId, installId } = yield* getTelemetryIdentity;
+  // Disabled telemetry must not read provider login files or persist an install identity.
+  const { distinctId, installId } = yield* telemetryEnabled
+    ? getTelemetryIdentity
+    : Effect.succeed({ distinctId: null, installId: null });
   const crypto = yield* SecureRandom.SecureRandom;
   const bufferRef = yield* Ref.make<ReadonlyArray<BufferedAnalyticsEvent>>([]);
   const deliveryRef = yield* Ref.make<DeliveryState>({
@@ -360,7 +364,7 @@ export const make = Effect.gen(function* () {
     flush.pipe(Effect.timeout(SHUTDOWN_FLUSH_TIMEOUT), Effect.ignore),
   );
 
-  return AnalyticsService.of({ record, flush, recordOwners });
+  return AnalyticsService.of({ isEnabled: telemetryEnabled, record, flush, recordOwners });
 });
 
 export const layer = Layer.effect(AnalyticsService, make);

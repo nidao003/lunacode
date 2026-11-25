@@ -67,6 +67,11 @@ export class ProviderRegistry extends Context.Service<
     /** Joins usage probes that `refresh` forked (Antigravity), so a manual refresh can return after fresh limits landed. */
     readonly awaitUsageRefresh?: Effect.Effect<void>;
 
+    /** Runs adapters' explicit usage-refresh path without treating ordinary provider refreshes as user-requested. */
+    readonly refreshUsageLimits: (
+      instanceId?: ProviderInstanceId,
+    ) => Effect.Effect<ReadonlyArray<ServerProvider>>;
+
     /** Unknown instance ids return the cached list without error. */
     readonly refreshInstance: (
       instanceId: ProviderInstanceId,
@@ -1332,6 +1337,42 @@ export const layer = Layer.effect(
       }
     });
 
+    const refreshUsageLimits = Effect.fn("ProviderRegistry.refreshUsageLimits")(function* (
+      instanceId?: ProviderInstanceId,
+    ) {
+      yield* syncLiveSourcesAndContinue;
+      const liveInstances = yield* Ref.get(liveSubsRef);
+      const targets =
+        instanceId === undefined
+          ? [...liveInstances.values()]
+          : [liveInstances.get(instanceId)].filter((instance) => instance !== undefined);
+      yield* Effect.forEach(
+        targets,
+        (instance) =>
+          (
+            instance.snapshot.refreshUsageManual ??
+            instance.snapshot.refreshUsage ??
+            Effect.void
+          ).pipe(Effect.andThen(instance.snapshot.awaitUsageRefresh ?? Effect.void)),
+        { concurrency: "unbounded" },
+      );
+      yield* Effect.forEach(
+        targets,
+        (instance) =>
+          Effect.gen(function* () {
+            if (!(yield* isCurrentInstance(instance))) return;
+            const providerSource = buildSnapshotSource(instance);
+            const snapshot = yield* providerSource.getSnapshot;
+            if (!(yield* isCurrentInstance(instance))) return;
+            yield* correlateSnapshotWithSource(providerSource, snapshot).pipe(
+              Effect.flatMap(syncProvider),
+            );
+          }),
+        { concurrency: "unbounded", discard: true },
+      );
+      return yield* Ref.get(providersRef);
+    });
+
     return {
       getProviders: Ref.get(providersRef),
       awaitUsageRefresh: Effect.gen(function* () {
@@ -1342,6 +1383,8 @@ export const layer = Layer.effect(
           { concurrency: "unbounded" },
         );
       }).pipe(Effect.ignoreCause({ log: true }), Effect.asVoid),
+      refreshUsageLimits: (instanceId?: ProviderInstanceId) =>
+        refreshUsageLimits(instanceId).pipe(Effect.catchCause(recoverRefreshFailure)),
       refresh: (provider?: ProviderDriverKind) =>
         refresh(provider).pipe(Effect.catchCause(recoverRefreshFailure)),
       refreshInstance: (instanceId: ProviderInstanceId) =>

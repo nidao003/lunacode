@@ -334,3 +334,214 @@ it.effect("caches Kimi usage limits for 5 minutes and skips refresh on Windows",
     );
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
+
+it.live("adopts a credential another process rotated when the refresh answers 401", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-kimi-adopt-" });
+    yield* writeHome(home, {
+      access_token: "stale-access",
+      refresh_token: "old-refresh",
+      expires_at: Math.floor((yield* Clock.currentTimeMillis) / 1_000) - 60,
+      expires_in: 900,
+      scope: "kimi-code",
+    });
+    const requests: Array<string> = [];
+    const client = HttpClient.make((request) =>
+      Effect.gen(function* () {
+        requests.push(request.url);
+        if (request.url === "https://auth.kimi.com/api/oauth/token") {
+          // While our refresh is in flight, another process wins the rotation and writes first.
+          yield* writeHome(home, {
+            access_token: "rotated-access",
+            refresh_token: "new-refresh",
+            expires_at: Math.floor((yield* Clock.currentTimeMillis) / 1_000) + 3_600,
+            expires_in: 900,
+            scope: "kimi-code",
+          });
+          return yield* Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              new Response(JSON.stringify({ error: "invalid_grant" }), { status: 401 }),
+            ),
+          );
+        }
+        assert.strictEqual(request.headers.authorization, "Bearer rotated-access");
+        return yield* Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            Response.json(
+              request.url.endsWith("/usages")
+                ? usages
+                : { user_id: "u-1", nickname: "AdoptedUser", user_level_name: "Allegretto" },
+            ),
+          ),
+        );
+      }),
+    );
+    const probe = yield* readKimiUsageLimits({ configuredHome: home }).pipe(
+      Effect.provideService(HostProcess.Platform, "linux"),
+      Effect.provideService(HttpClient.HttpClient, client),
+    );
+    assert.deepStrictEqual(requests[0], "https://auth.kimi.com/api/oauth/token");
+    assert.strictEqual(probe?.email, "AdoptedUser");
+    // The winner's credential stays on disk; only a loser with no winner writes a tombstone.
+    const saved = yield* fs.readFileString(path.join(home, "credentials", "kimi-code.json"));
+    const decoded = yield* decodeSavedCredential(saved);
+    assert.strictEqual(decoded.access_token, "rotated-access");
+    assert.strictEqual(decoded.refresh_token, "new-refresh");
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.live("writes Kimi's tombstone when the refresh is revoked and nobody rotated", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-kimi-tombstone-" });
+    yield* writeHome(home, {
+      access_token: "revoked-access",
+      refresh_token: "revoked-refresh",
+      expires_at: Math.floor((yield* Clock.currentTimeMillis) / 1_000) - 60,
+      expires_in: 900,
+      scope: "kimi-code",
+    });
+    const client = HttpClient.make((request) =>
+      Effect.succeed(
+        HttpClientResponse.fromWeb(
+          request,
+          new Response(JSON.stringify({ error: "invalid_grant" }), { status: 401 }),
+        ),
+      ),
+    );
+    const probe = yield* readKimiUsageLimits({ configuredHome: home }).pipe(
+      Effect.provideService(HostProcess.Platform, "linux"),
+      Effect.provideService(HttpClient.HttpClient, client),
+    );
+    assert.strictEqual(probe?.usageLimits.unavailable?.reason, "unsupported");
+    const saved = yield* fs.readFileString(path.join(home, "credentials", "kimi-code.json"));
+    const decoded = yield* decodeSavedCredential(saved);
+    assert.strictEqual(decoded.access_token, "");
+    assert.strictEqual(decoded.refresh_token, "");
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.live("keeps the current token on a transient refresh failure", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-kimi-transient-" });
+    yield* writeHome(home, {
+      access_token: "stale-access",
+      refresh_token: "old-refresh",
+      expires_at: Math.floor((yield* Clock.currentTimeMillis) / 1_000) - 60,
+      expires_in: 900,
+      scope: "kimi-code",
+    });
+    const requests: Array<string> = [];
+    const client = HttpClient.make((request) => {
+      requests.push(request.url);
+      if (request.url === "https://auth.kimi.com/api/oauth/token") {
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(request, new Response("server error", { status: 500 })),
+        );
+      }
+      assert.strictEqual(request.headers.authorization, "Bearer stale-access");
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(
+          request,
+          Response.json(
+            request.url.endsWith("/usages")
+              ? usages
+              : { user_id: "u-1", nickname: "StaleUser", user_level_name: "Allegretto" },
+          ),
+        ),
+      );
+    });
+    const probe = yield* readKimiUsageLimits({ configuredHome: home }).pipe(
+      Effect.provideService(HostProcess.Platform, "linux"),
+      Effect.provideService(HttpClient.HttpClient, client),
+    );
+    assert.deepStrictEqual(requests[0], "https://auth.kimi.com/api/oauth/token");
+    assert.strictEqual(probe?.email, "StaleUser");
+    const saved = yield* fs.readFileString(path.join(home, "credentials", "kimi-code.json"));
+    const decoded = yield* decodeSavedCredential(saved);
+    assert.strictEqual(decoded.access_token, "stale-access");
+    assert.strictEqual(decoded.refresh_token, "old-refresh");
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.live("refreshes only inside Kimi's half-lifetime window", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-kimi-threshold-" });
+    const nowSeconds = Math.floor((yield* Clock.currentTimeMillis) / 1_000);
+    yield* writeHome(home, {
+      access_token: "long-lived-access",
+      refresh_token: "long-lived-refresh",
+      expires_at: nowSeconds + 3_700,
+      expires_in: 7_200,
+      scope: "kimi-code",
+    });
+    const requests: Array<string> = [];
+    const client = HttpClient.make((request) => {
+      requests.push(request.url);
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(request, new Response("server error", { status: 500 })),
+      );
+    });
+    // 3700 of 7200 seconds remain; the threshold is max(300, 3600), so no refresh happens.
+    const first = yield* readKimiUsageLimits({ configuredHome: home }).pipe(
+      Effect.provideService(HostProcess.Platform, "linux"),
+      Effect.provideService(HttpClient.HttpClient, client),
+    );
+    assert.strictEqual(first?.usageLimits.unavailable?.reason, "probeFailed");
+    assert.deepStrictEqual(requests, [
+      "https://api.kimi.com/coding/v1/me",
+      "https://api.kimi.com/coding/v1/usages",
+    ]);
+
+    // 3500 of 7200 seconds remain, inside the half-lifetime window: refresh once.
+    yield* writeHome(home, {
+      access_token: "long-lived-access",
+      refresh_token: "long-lived-refresh",
+      expires_at: nowSeconds + 3_500,
+      expires_in: 7_200,
+      scope: "kimi-code",
+    });
+    const refreshable = yield* readKimiUsageLimits({ configuredHome: home }).pipe(
+      Effect.provideService(HostProcess.Platform, "linux"),
+      Effect.provideService(
+        HttpClient.HttpClient,
+        HttpClient.make((request) => {
+          requests.push(request.url);
+          if (request.url === "https://auth.kimi.com/api/oauth/token") {
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json({
+                  access_token: "long-lived-access",
+                  refresh_token: "long-lived-refresh",
+                  expires_in: 7_200,
+                  token_type: "Bearer",
+                }),
+              ),
+            );
+          }
+          return Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              Response.json(
+                request.url.endsWith("/usages")
+                  ? usages
+                  : { user_id: "u-1", nickname: "ThresholdUser", user_level_name: "Allegretto" },
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+    assert.ok(requests.includes("https://auth.kimi.com/api/oauth/token"));
+    assert.strictEqual(refreshable?.email, "ThresholdUser");
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);

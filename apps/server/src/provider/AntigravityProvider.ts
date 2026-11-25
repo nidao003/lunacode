@@ -171,6 +171,14 @@ interface AntigravityProviderOptions {
     EffectAcpErrors.AcpError | ProviderSetupError
   >;
   readonly supportsTextGeneration: Effect.Effect<boolean>;
+  readonly readAccountInfo?: Effect.Effect<
+    | {
+        readonly email?: string | undefined;
+        readonly label?: string | undefined;
+        readonly hasToken?: boolean | undefined;
+      }
+    | undefined
+  >;
   readonly probeUsage?: Effect.Effect<ServerProviderUsageLimits>;
   readonly readCachedUsage?: Effect.Effect<ServerProviderUsageLimits | undefined>;
   readonly clearUsage?: Effect.Effect<void>;
@@ -322,23 +330,51 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
               : `Antigravity did not respond to its local health check within ${timeoutMs / 1_000} seconds.`;
     const supportsTextGeneration =
       initialized !== undefined ? yield* options.supportsTextGeneration : false;
+    const accountInfo =
+      !missingInstallation && options.readAccountInfo
+        ? yield* options.readAccountInfo.pipe(Effect.orElseSucceed(() => undefined))
+        : undefined;
+    const hasMissingToken = !usesCredentials && accountInfo?.hasToken === false;
     const updatedAt = DateTime.formatIso(yield* DateTime.now);
     const applyCheck = (state: AntigravityProviderState) => {
       if (state.authRevision !== before.authRevision) return state;
       const { message: _previousMessage, ...draft } = state.draft;
       const authenticated = draft.auth.status === "authenticated";
+      const unauthenticatedOrCleared = draft.auth.status === "unauthenticated" || hasMissingToken;
       const { email: existingEmail, label: existingLabel, ...authWithoutIdentity } = draft.auth;
-      const nextEmail = missingInstallation ? undefined : authenticated ? existingEmail : undefined;
-      const nextLabel = missingInstallation
-        ? usesCredentials
-          ? options.auth?.label
-          : undefined
-        : existingLabel;
+      const nextEmail =
+        missingInstallation || unauthenticatedOrCleared
+          ? undefined
+          : (accountInfo?.email ?? existingEmail);
+      const nextLabel =
+        missingInstallation || unauthenticatedOrCleared
+          ? usesCredentials
+            ? options.auth?.label
+            : undefined
+          : (accountInfo?.label ?? existingLabel);
       const nextAuth = {
         ...authWithoutIdentity,
         ...(nextLabel ? { label: nextLabel } : {}),
         ...(nextEmail ? { email: nextEmail } : {}),
       };
+      const signInRequiredLimits: ServerProviderUsageLimits = {
+        checkedAt: updatedAt,
+        windows: [],
+        unavailable: {
+          reason: "unsupported",
+          message: "Sign in with Google to see Antigravity limits.",
+        },
+      };
+      const nextUsageLimits = missingInstallation
+        ? undefined
+        : hasMissingToken
+          ? draft.auth.status === "unauthenticated"
+            ? undefined
+            : signInRequiredLimits
+          : draft.usageLimits?.unavailable?.message ===
+              "Sign in with Google to see Antigravity limits."
+            ? undefined
+            : draft.usageLimits;
       const message =
         errorMessage ??
         (authenticated
@@ -356,7 +392,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
           version: version === "unknown" ? draft.version : version || draft.version,
           status: errorMessage ? "error" : authenticated ? "ready" : "warning",
           checkedAt: updatedAt,
-          usageLimits: missingInstallation ? undefined : draft.usageLimits,
+          usageLimits: nextUsageLimits,
           ...(missingInstallation
             ? {
                 models: [],
@@ -388,23 +424,29 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
         yield* refreshUsage();
       } else if (!(yield* PublishingUsage) && next.draft.usageLimits === undefined) {
         const hydrated =
-          !usesCredentials && options.readCachedUsage
+          !usesCredentials && !hasMissingToken && options.readCachedUsage
             ? yield* options.readCachedUsage.pipe(Effect.orElseSucceed(() => undefined))
             : undefined;
-        const fallbackLimits = usesCredentials
-          ? {
-              checkedAt: updatedAt,
-              windows: [],
-              unavailable: { reason: "unsupported" as const },
-            }
-          : (hydrated ?? {
-              checkedAt: updatedAt,
-              windows: [],
-              unavailable: {
-                reason: "probeFailed" as const,
-                message: "Click Refresh to check Antigravity limits via the official agy CLI.",
-              },
-            });
+        const fallbackLimits =
+          usesCredentials || hasMissingToken
+            ? {
+                checkedAt: updatedAt,
+                windows: [],
+                unavailable: {
+                  reason: "unsupported" as const,
+                  ...(hasMissingToken
+                    ? { message: "Sign in with Google to see Antigravity limits." }
+                    : {}),
+                },
+              }
+            : (hydrated ?? {
+                checkedAt: updatedAt,
+                windows: [],
+                unavailable: {
+                  reason: "probeFailed" as const,
+                  message: "Click Refresh to check Antigravity limits via the official agy CLI.",
+                },
+              });
         const hydratedDraft = yield* SubscriptionRef.modify(metadata, (state) => {
           if (state.authRevision !== next.authRevision || state.draft.usageLimits !== undefined) {
             return [state.draft, state];
@@ -454,6 +496,9 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     observeThinkingLevels(started.sessionSetupResult.configOptions);
     const before = yield* SubscriptionRef.get(metadata);
     const supportsTextGeneration = yield* options.supportsTextGeneration;
+    const accountInfo = options.readAccountInfo
+      ? yield* options.readAccountInfo.pipe(Effect.orElseSucceed(() => undefined))
+      : undefined;
     const updatedAt = DateTime.formatIso(yield* DateTime.now);
     yield* SubscriptionRef.update(metadata, (state) => {
       if (
@@ -467,6 +512,9 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       const workspace = cwd ? workspaces.find((entry) => entry.cwd === cwd) : undefined;
       const preservedLabel =
         state.draft.auth.status !== "unauthenticated" ? state.draft.auth.label : undefined;
+      const preservedEmail =
+        state.draft.auth.status !== "unauthenticated" ? state.draft.auth.email : undefined;
+      const nextEmail = accountInfo?.email ?? preservedEmail;
       return {
         authRevision: state.authRevision + 1,
         draft: {
@@ -477,7 +525,8 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
           auth: {
             status: "authenticated",
             type: options.auth?.type ?? "oauth-personal",
-            label: preservedLabel ?? options.auth?.label ?? "Google account",
+            label: accountInfo?.label ?? preservedLabel ?? options.auth?.label ?? "Google account",
+            ...(nextEmail ? { email: nextEmail } : {}),
           },
           checkedAt: updatedAt,
           models: buildAntigravityModelsFromSession(started.sessionSetupResult, thinkingLevels),
@@ -611,8 +660,14 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     snapshot: {
       ...managed,
       getSnapshot,
-      refresh: managed.refresh.pipe(Effect.provideService(ManualUsageRefresh, true)),
+      refresh: managed.refresh,
+      // Auto turn-failure refreshes must stay passive for Antigravity; only explicit manual usage
+      // refreshes (`refreshUsageManual`) invoke the official `agy --print /usage` CLI.
       refreshUsage: Effect.void,
+      refreshUsageManual: managed.refresh.pipe(
+        Effect.provideService(ManualUsageRefresh, true),
+        Effect.asVoid,
+      ),
       // A manual refresh kicks a quota probe and joins this to return once fresh limits published.
       awaitUsageRefresh: FiberHandle.awaitEmpty(usageRead).pipe(Effect.ignoreCause({ log: true })),
     },

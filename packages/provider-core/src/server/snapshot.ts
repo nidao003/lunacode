@@ -26,6 +26,11 @@ export interface ManagedServerProvider {
   readonly refresh: Effect.Effect<ServerProvider>;
   readonly refreshUsage?: Effect.Effect<void, ServerSettingsError>;
   /**
+   * Explicit user-initiated quota refresh (distinct from automatic `refreshUsage` on turn limit
+   * errors, so providers with manual-only CLI probes can still respond to Refresh clicks).
+   */
+  readonly refreshUsageManual?: Effect.Effect<void, ServerSettingsError>;
+  /**
    * Resolves once a quota probe forked by `refresh` has published, so a manual refresh can await
    * fresh limits instead of returning the pre-probe snapshot. Best-effort: no-ops without a probe.
    */

@@ -793,7 +793,7 @@ it.effect("provisions independent launches concurrently instead of behind a glob
 );
 
 it.effect.each([" /COMPACT "])(
-  "uses the first conversation message for a title after %s",
+  "keeps the seeded title without a generated title after %s",
   (nativeCommand) =>
     Effect.gen(function* () {
       const harness = makeHarness();
@@ -831,16 +831,21 @@ it.effect.each([" /COMPACT "])(
           attachments: [],
           dispatchMode: { type: "defer_start" },
         });
+        // LunaCode never starts an implicit title turn from an ordinary first conversation
+        // message; only an explicit titleSeed arms generation. The seed title stays until the
+        // user regenerates it manually.
+        assert.isUndefined(
+          (yield* threads.getThreadProjection(launched.threadId)).thread.titleRegeneration,
+        );
         assert.equal(
-          (yield* threads.getThreadProjection(launched.threadId)).thread.titleRegeneration
-            ?.requestId,
-          commandId,
+          (yield* threads.getThreadProjection(launched.threadId)).thread.title,
+          "New thread",
         );
         assert.deepEqual(
           (yield* outbox.listByCommandId(commandId))
             .filter((effect) => effect.request.type === "thread-title.generate")
             .map((effect) => effect.request),
-          [{ type: "thread-title.generate", kind: { type: "initial", messageId } }],
+          [],
         );
       }).pipe(Effect.provide(harness.layer));
     }),

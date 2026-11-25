@@ -1,3 +1,4 @@
+import { rebrandCatalogToLunaCode } from "@t3tools/client-runtime/lunacode/brand-display";
 import { resolveLocaleSelection } from "@t3tools/client-runtime/locales";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
@@ -33,7 +34,7 @@ const CATALOGS: Readonly<Record<string, () => unknown>> = {
 initializeGT({
   defaultLocale: DEFAULT_LOCALE,
   locales: [...SUPPORTED_LOCALES],
-  loadTranslations: async (locale: string) => CATALOGS[locale]?.() ?? {},
+  loadTranslations: async (locale: string) => rebrandCatalogToLunaCode(CATALOGS[locale]?.() ?? {}),
   // Loaded catalogs never go stale; GT's default 60 s expiry would only reload the same file.
   cacheExpiryTime: null,
 });

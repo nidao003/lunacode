@@ -213,7 +213,7 @@ describe("makeAntigravityQuotaCache", () => {
   );
 
   it.effect(
-    "hydrates, recovers, and clears instance-level cached limits when email is undefined",
+    "hydrates, recovers, and clears cached limits matching the normalized email or undefined",
     () =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -228,6 +228,7 @@ describe("makeAntigravityQuotaCache", () => {
 
         yield* cache.persist(goodLimits, undefined);
         expect(yield* cache.hydrate()).toEqual(goodLimits);
+        expect(yield* cache.hydrate("user@example.com")).toBeUndefined();
         expect(yield* cache.recover(failedLimits, undefined)).toEqual({
           ...goodLimits,
           unavailable: failedLimits.unavailable,
@@ -238,9 +239,11 @@ describe("makeAntigravityQuotaCache", () => {
         expect(yield* cache.hydrate()).toBeUndefined();
         expect(yield* cache.recover(failedLimits, undefined)).toEqual(failedLimits);
 
-        // Email-keyed entries remain excluded from anonymous startup hydration.
-        yield* cache.persist(goodLimits, "user@example.com");
+        // Email-keyed entries hydrate only when the matching normalized email is supplied.
+        yield* cache.persist(goodLimits, "User@Example.com");
         expect(yield* cache.hydrate()).toBeUndefined();
+        expect(yield* cache.hydrate("other@example.com")).toBeUndefined();
+        expect(yield* cache.hydrate("user@example.com")).toEqual(goodLimits);
       }).pipe(Effect.scoped, Effect.provide(layer)),
   );
 });

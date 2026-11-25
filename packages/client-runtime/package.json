@@ -678,6 +678,10 @@
     "./lunacode/subscription-tier": {
       "types": "./src/lunacode/subscriptionTier.logic.ts",
       "default": "./src/lunacode/subscriptionTier.logic.ts"
+    },
+    "./lunacode/brand-display": {
+      "types": "./src/lunacode/brandDisplay.ts",
+      "default": "./src/lunacode/brandDisplay.ts"
     }
   },
   "scripts": {

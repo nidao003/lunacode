@@ -7359,40 +7359,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
       projection = applyToProjection(projection, event);
     }
-    const userMessages = projection.messages.filter((message) => message.role === "user");
-    // The recent runs of a compacted thread can hold only a `/compact` while an older prompt
-    // exists, so when every loaded prompt is one, every user message is checked.
-    const onlyMaintenanceHistory = [
-      ...userMessages,
-      ...projection.turnItems.flatMap((item) => (item.type === "user_message" ? [item] : [])),
-    ].every(isNativeMaintenanceCommand)
-      ? projectionStore
-          .getThreadRecords(command.threadId, ["messages"], { messageRoles: ["user"] })
-          .pipe(
-            // A thread this command creates has no stored messages yet.
-            Effect.catchTags({
-              ProjectionStoreThreadNotFoundError: () => Effect.succeed({ messages: [] }),
-            }),
-            Effect.map(({ messages }) => [...messages, ...userMessages]),
-            Effect.map((all) => all.length > 0 && all.every(isNativeMaintenanceCommand)),
-            mapDispatchError(command),
-          )
-      : Effect.succeed(false);
-    // A thread named before its first message (for example by an MCP launch that tracks an issue)
-    // keeps that name instead of a title generated from a terse prompt such as "work on this".
+    // Keep any title set before the first message. LunaCode only arms title generation when the
+    // client explicitly seeds `titleSeed` (never on ordinary first messages or native maintenance);
+    // users can still regenerate a title explicitly.
     const seedsUntitledThread =
       command.titleSeed !== undefined &&
       (yield* projectionStore.getMessageCount(command.threadId).pipe(mapDispatchError(command))) ===
         0 &&
       !hasTitleSetBeforeFirstMessage(projection.thread, command.titleSeed);
-    if (
-      !isNativeMaintenanceCommand(command) &&
-      (seedsUntitledThread || (command.createdBy === "user" && (yield* onlyMaintenanceHistory)))
-    ) {
+    if (!isNativeMaintenanceCommand(command) && seedsUntitledThread) {
       const now = yield* DateTime.now;
       const thread: OrchestrationV2AppThread = {
         ...projection.thread,
-        title: command.titleSeed ?? projection.thread.title,
+        title: command.titleSeed,
         titleRegeneration: { requestId: command.commandId, startedAt: now },
         updatedAt: now,
       };

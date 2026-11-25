@@ -743,6 +743,11 @@ export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProv
     /** Bypass model caches; explicit rediscovery may open sessions, background refreshes must not. */
     refreshModels: Schema.optional(Schema.Boolean),
     /**
+     * An explicit Usage → Limits refresh. Provider adapters may perform interactive or costly
+     * usage reads here; ordinary background refreshes must not set this flag.
+     */
+    manualUsageRefresh: Schema.optional(Schema.Boolean),
+    /**
      * A model picker opened: refetch a model manifest older than a few minutes and probe providers
      * only when it changed. The other fields are ignored and the config stream carries the result.
      */

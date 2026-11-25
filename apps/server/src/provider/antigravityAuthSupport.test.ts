@@ -72,6 +72,7 @@ describe("Antigravity process environment", () => {
       GEMINI_HOME: "/shared-gemini-home",
       gemini_home: "/alias-shared-home",
       AGY_ACP_FORCE_FILE_STORAGE: "0",
+      AGY_CLI_FORCE_FILE_TOKEN_STORAGE: "0",
       agy_cli_disable_auto_update: "0",
       BROWSER: "open-real-browser",
       browser: "another-real-browser",
@@ -100,7 +101,8 @@ describe("Antigravity process environment", () => {
         PATH: "/usr/bin",
         CUSTOM_SETTING: "keep-this",
         GEMINI_HOME: profile.geminiHome,
-        AGY_CLI_DISABLE_AUTO_UPDATE: "1",
+        AGY_CLI_DISABLE_AUTO_UPDATE: "true",
+        AGY_CLI_FORCE_FILE_TOKEN_STORAGE: "1",
         BROWSER: profile.browserCommand,
         PYTHONUNBUFFERED: "1",
         ELECTRON_RUN_AS_NODE: "1",
@@ -148,15 +150,20 @@ describe("Antigravity process environment", () => {
     expect(business.GEMINI_API_KEY).toBeUndefined();
     expect(business.GOOGLE_API_KEY).toBeUndefined();
 
-    for (const env of [
-      geminiKey,
-      vertexKey,
-      business,
-      spawnFor({ authMethod: "oauth-personal", apiKey: "", gcpProject: "", gcpLocation: "" }),
-    ]) {
+    const personal = spawnFor({
+      authMethod: "oauth-personal",
+      apiKey: "",
+      gcpProject: "",
+      gcpLocation: "",
+    });
+    for (const env of [geminiKey, vertexKey, business]) {
       expect(env.SSH_CONNECTION).toBeUndefined();
       expect(env.AGY_ACP_FORCE_FILE_STORAGE).toBeUndefined();
+      expect(env.AGY_CLI_FORCE_FILE_TOKEN_STORAGE).toBeUndefined();
     }
+    expect(personal.SSH_CONNECTION).toBeUndefined();
+    expect(personal.AGY_ACP_FORCE_FILE_STORAGE).toBeUndefined();
+    expect(personal.AGY_CLI_FORCE_FILE_TOKEN_STORAGE).toBe("1");
   });
 
   it("isolates TEMP and TMP to the profile directory on Windows", () => {

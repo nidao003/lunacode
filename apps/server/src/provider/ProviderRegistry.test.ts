@@ -3503,6 +3503,117 @@ it.layer(
       }),
     );
 
+    it.effect(
+      "refreshUsageLimits prefers refreshUsageManual, awaits awaitUsageRefresh, and returns the updated snapshot",
+      () =>
+        Effect.gen(function* () {
+          const driver = ProviderDriverKind.make("antigravity");
+          const instanceId = ProviderInstanceId.make("antigravity-manual");
+          const initialProvider = {
+            instanceId,
+            driver,
+            status: "ready",
+            enabled: true,
+            installed: true,
+            auth: { status: "authenticated", type: "oauth-personal", label: "Google account" },
+            checkedAt: "2026-06-10T00:00:00.000Z",
+            version: "1.5.17",
+            models: [],
+            slashCommands: [],
+            skills: [],
+          } as const satisfies ServerProvider;
+          const updatedLimits: NonNullable<ServerProvider["usageLimits"]> = {
+            checkedAt: "2026-06-10T00:01:00.000Z",
+            windows: [
+              { id: "gemini-5h", kind: "session", label: "Gemini · 5-hour", usedPercent: 25 },
+            ],
+          };
+          const snapshotRef = yield* Ref.make<ServerProvider>(initialProvider);
+          const changes = yield* PubSub.unbounded<ServerProvider>();
+          let autoRefreshCount = 0;
+          let manualRefreshCount = 0;
+          const probeDone = yield* Deferred.make<void>();
+          const instance = {
+            instanceId,
+            driverKind: driver,
+            continuationIdentity: { driverKind: driver, continuationKey: "antigravity:manual" },
+            displayName: undefined,
+            enabled: true,
+            snapshot: {
+              resolveMaintenance: () =>
+                Effect.succeed(
+                  makeManualOnlyProviderMaintenanceCapabilities({
+                    provider: driver,
+                    packageName: null,
+                  }),
+                ),
+              getSnapshot: Ref.get(snapshotRef),
+              refresh: Ref.get(snapshotRef),
+              refreshUsage: Effect.sync(() => {
+                autoRefreshCount += 1;
+              }),
+              refreshUsageManual: Effect.gen(function* () {
+                manualRefreshCount += 1;
+                yield* Effect.gen(function* () {
+                  const updated: ServerProvider = {
+                    ...initialProvider,
+                    checkedAt: "2026-06-10T00:01:00.000Z",
+                    auth: {
+                      ...initialProvider.auth,
+                      email: "manual@example.com",
+                    },
+                    usageLimits: updatedLimits,
+                  };
+                  yield* Ref.set(snapshotRef, updated);
+                  yield* PubSub.publish(changes, updated);
+                  yield* Deferred.succeed(probeDone, undefined);
+                }).pipe(Effect.forkDetach);
+              }),
+              awaitUsageRefresh: Deferred.await(probeDone),
+              streamChanges: Stream.fromPubSub(changes),
+              applyUsageLimits: () => Effect.void,
+            },
+            orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
+            textGeneration: {} as ProviderInstance["textGeneration"],
+          } satisfies ProviderInstance;
+          const instanceRegistryLayer = Layer.succeed(
+            ProviderInstanceRegistry.ProviderInstanceRegistry,
+            {
+              getInstance: (requestedId) =>
+                Effect.succeed(requestedId === instanceId ? instance : undefined),
+              listInstances: Effect.succeed([instance]),
+              listUnavailable: Effect.succeed([]),
+              streamChanges: Stream.empty,
+              subscribeChanges: Effect.flatMap(PubSub.unbounded<void>(), PubSub.subscribe),
+            },
+          );
+          const scope = yield* Scope.make();
+          yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
+          const runtimeServices = yield* Layer.build(
+            ProviderRegistry.layer.pipe(
+              Layer.provide(layerUnusedMutator),
+              Layer.provideMerge(instanceRegistryLayer),
+              Layer.provideMerge(
+                ServerConfig.layerTest(process.cwd(), {
+                  prefix: "t3-provider-registry-manual-usage-",
+                }),
+              ),
+              Layer.provideMerge(NodeServices.layer),
+            ),
+          ).pipe(Scope.provide(scope));
+
+          yield* Effect.gen(function* () {
+            const registry = yield* ProviderRegistry.ProviderRegistry;
+            const providers = yield* registry.refreshUsageLimits(instanceId);
+            assert.equal(manualRefreshCount, 1);
+            assert.equal(autoRefreshCount, 0);
+            const target = providers.find((candidate) => candidate.instanceId === instanceId);
+            assert.deepStrictEqual(target?.usageLimits, updatedLimits);
+            assert.equal(target?.auth.email, "manual@example.com");
+          }).pipe(Effect.provide(runtimeServices));
+        }),
+    );
+
     it.effect("persists the merged snapshot when a live update has empty models", () =>
       Effect.gen(function* () {
         const cursorDriver = ProviderDriverKind.make("cursor");
