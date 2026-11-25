@@ -4,6 +4,8 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
+import { LUNACODE_MAC_USER_DATA_DIR } from "../lunacode/branding.ts";
+
 export class DesktopUserDataInitializationError extends Schema.TaggedError<DesktopUserDataInitializationError>()(
   "DesktopUserDataInitializationError",
   {
@@ -41,7 +43,10 @@ export const resolveUserDataPath = Effect.fn("desktop.userData.resolveUserDataPa
     const path = yield* Path.Path;
     const names = input.isDevelopment
       ? { current: "t3code-dev", legacy: "T3 Code (Dev)" }
-      : { current: "t3code-v2", legacy: "T3 Code (Alpha)" };
+      : {
+          current: input.platform === "darwin" ? LUNACODE_MAC_USER_DATA_DIR : "t3code-v2",
+          legacy: "T3 Code (Alpha)",
+        };
     const destinationPath = path.join(input.appDataDirectory, names.current);
     const legacyPath = path.join(input.appDataDirectory, names.legacy);
     const inspect = (resourcePath: string) =>

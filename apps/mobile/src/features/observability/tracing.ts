@@ -23,11 +23,15 @@ const RELEASE_CHANNEL_BY_VARIANT: Readonly<Record<string, ReleaseChannel | undef
 };
 
 export function resolveTracingConfig(): TracingConfig | null {
+  // LunaCode: tracing to upstream Axiom is permanently disabled.
+  // Set EXPO_PUBLIC_OTLP_TRACES_TOKEN env var to route to your own OTLP endpoint instead.
   const config = resolveCloudPublicConfig();
   if (!hasTracingPublicConfig(config)) {
     return null;
   }
   const { tracesUrl, tracesDataset, tracesToken } = config.observability;
+  // If token is not explicitly set, treat as disabled (upstream default token removed).
+  if (!tracesToken) return null;
   return { tracesUrl, tracesDataset, tracesToken };
 }
 

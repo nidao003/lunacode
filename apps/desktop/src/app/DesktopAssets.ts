@@ -80,6 +80,11 @@ function resolveSourceTreeIconPath(
 ): string | undefined {
   if (environment.isPackaged || ext === "icns") return undefined;
   const brand = environment.isDevelopment ? "dev" : "prod";
+  if (brand === "prod" && ext === "png") {
+    const fileName =
+      environment.platform === "darwin" ? "lunacode-macos-1024.png" : "lunacode-universal-1024.png";
+    return environment.path.join(environment.rootDir, "assets", "lunacode", fileName);
+  }
   const fileNames = sourceTreeIconFileNames[brand];
   const fileName =
     ext === "ico"

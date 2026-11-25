@@ -138,3 +138,16 @@ it.effect("retries on the next launch when a GPU cache cannot be removed", () =>
     assert.deepStrictEqual(writes, []);
   }).pipe(Effect.provide(NodeServices.layer)),
 );
+
+it.effect("uses an isolated userData directory for LunaCode on macOS production", () =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const resolved = yield* resolveUserDataPath({
+      appDataDirectory: "/Users/alice/Library/Application Support",
+      isDevelopment: false,
+      platform: "darwin",
+    });
+
+    assert.equal(resolved, path.join("/Users/alice/Library/Application Support", "lunacode-v2"));
+  }).pipe(Effect.provide(NodeServices.layer)),
+);

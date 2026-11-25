@@ -27,6 +27,7 @@ import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopNetworkInterfaces from "./DesktopNetworkInterfaces.ts";
 import { resolveTailscaleAdvertisedEndpoints } from "./tailscaleEndpointProvider.ts";
+import { DesktopMdnsHostnameReader } from "../lunacode/mdnsHostname.ts";
 
 const TAILSCALE_STATUS_CACHE_TTL = Duration.seconds(60);
 
@@ -45,6 +46,7 @@ interface ResolvedDesktopServerExposure {
 interface DesktopAdvertisedEndpointInput {
   readonly port: number;
   readonly exposure: ResolvedDesktopServerExposure;
+  readonly mdnsHostname?: string | null;
   readonly customHttpsEndpointUrls?: readonly string[];
 }
 
@@ -185,6 +187,26 @@ const resolveDesktopCoreAdvertisedEndpoints = (
         description: "Reachable from devices on the same network.",
       }),
     );
+  }
+
+  if (input.exposure.mode === "network-accessible" && input.mdnsHostname) {
+    const mdnsHttpUrl = `http://${input.mdnsHostname}:${input.port}/`;
+    const primaryHttpUrl = input.exposure.endpointUrl
+      ? `${input.exposure.endpointUrl.replace(/\/+$/u, "")}/`
+      : null;
+    if (mdnsHttpUrl.toLowerCase() !== primaryHttpUrl?.toLowerCase()) {
+      endpoints.push(
+        createDesktopEndpoint({
+          id: `desktop-lan-mdns:${mdnsHttpUrl}`,
+          label: "Local domain (.local)",
+          httpBaseUrl: mdnsHttpUrl,
+          reachability: "lan",
+          status: "available",
+          description:
+            "mDNS local hostname. Stays reachable on this LAN even when your IP changes.",
+        }),
+      );
+    }
   }
 
   for (const customEndpointUrl of input.customHttpsEndpointUrls ?? []) {
@@ -465,6 +487,7 @@ export const make = Effect.gen(function* () {
   const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const httpClient = yield* HttpClient.HttpClient;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
+  const readMdnsHostname = yield* DesktopMdnsHostnameReader;
   const stateRef = yield* Ref.make(initialRuntimeState());
   // Serialize read-persist-write changes so stale runtime state cannot overwrite another update.
   const changePermit = yield* Semaphore.make(1);
@@ -604,9 +627,16 @@ export const make = Effect.gen(function* () {
   const getAdvertisedEndpoints = Effect.gen(function* () {
     const currentNetworkInterfaces = yield* readNetworkInterfaces;
     const state = yield* readCurrentState(currentNetworkInterfaces);
+    const mdnsHostname =
+      state.mode === "network-accessible"
+        ? yield* readMdnsHostname().pipe(
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
+          )
+        : null;
     const coreEndpoints = resolveDesktopCoreAdvertisedEndpoints({
       port: state.port,
       exposure: toResolvedExposure(state),
+      mdnsHostname,
       customHttpsEndpointUrls: config.desktopHttpsEndpointUrls,
     });
 

@@ -19,6 +19,7 @@ import * as DesktopManagedPolicy from "../app/DesktopManagedPolicy.ts";
 import * as DesktopNetworkInterfaces from "./DesktopNetworkInterfaces.ts";
 import * as DesktopServerExposure from "./DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
+import { DesktopMdnsHostnameReader } from "../lunacode/mdnsHostname.ts";
 
 const encoder = new TextEncoder();
 
@@ -98,14 +99,19 @@ function layer(input: {
   readonly spawnerLayer?: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>;
   readonly desktopSettingsLayer?: Layer.Layer<DesktopAppSettings.DesktopAppSettings>;
   readonly managedPolicyLayer?: Layer.Layer<DesktopManagedPolicy.DesktopManagedPolicy>;
+  readonly mdnsHostname?: string | null;
 }) {
   const env = { T3CODE_HOME: input.baseDir, ...input.env };
   const layerEnvironment = layerEnvironmentFor(input.baseDir, env);
   const layerNetwork = Layer.succeed(DesktopNetworkInterfaces.DesktopNetworkInterfaces, {
     read: Effect.succeed(input.networkInterfaces ?? emptyNetworkInterfaces),
   });
+  const layerMdnsHostname = Layer.succeed(DesktopMdnsHostnameReader, () =>
+    Effect.succeed(input.mdnsHostname ?? null),
+  );
 
   return DesktopServerExposure.layer.pipe(
+    Layer.provideMerge(layerMdnsHostname),
     Layer.provideMerge(input.desktopSettingsLayer ?? DesktopAppSettings.layer),
     Layer.provideMerge(input.managedPolicyLayer ?? DesktopManagedPolicy.layerTest()),
     Layer.provideMerge(NodeFileSystem.layer),
@@ -132,6 +138,7 @@ const withHarness = <A, E, R>(
   spawnerLayer?: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>,
   desktopSettingsLayer?: Layer.Layer<DesktopAppSettings.DesktopAppSettings>,
   managedPolicyLayer?: Layer.Layer<DesktopManagedPolicy.DesktopManagedPolicy>,
+  mdnsHostname: string | null = null,
 ) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
@@ -144,6 +151,7 @@ const withHarness = <A, E, R>(
           baseDir,
           networkInterfaces,
           env,
+          mdnsHostname,
           ...(spawnerLayer ? { spawnerLayer } : {}),
           ...(desktopSettingsLayer ? { desktopSettingsLayer } : {}),
           ...(managedPolicyLayer ? { managedPolicyLayer } : {}),
@@ -515,6 +523,70 @@ describe("DesktopServerExposure", () => {
         T3CODE_DESKTOP_LAN_HOST: "100.90.1.2",
         T3CODE_DESKTOP_HTTPS_ENDPOINTS: "https://public.example.test",
       },
+    ),
+  );
+
+  it.effect(
+    "advertises a LAN .local mDNS endpoint only in network-accessible mode and deduplicates matching overrides",
+    () =>
+      withHarness(
+        lanNetworkInterfaces,
+        Effect.gen(function* () {
+          const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+          yield* serverExposure.configureFromSettings({ port: 4173 });
+
+          const localOnlyEndpoints = yield* serverExposure.getAdvertisedEndpoints;
+          assert.deepEqual(
+            localOnlyEndpoints.map((endpoint) => endpoint.httpBaseUrl),
+            ["http://127.0.0.1:4173/"],
+          );
+
+          yield* serverExposure.setMode("network-accessible");
+          const networkEndpoints = yield* serverExposure.getAdvertisedEndpoints;
+          assert.deepEqual(
+            networkEndpoints.map((endpoint) => [
+              endpoint.id,
+              endpoint.httpBaseUrl,
+              endpoint.reachability,
+            ]),
+            [
+              ["desktop-loopback:4173", "http://127.0.0.1:4173/", "loopback"],
+              ["desktop-lan:http://192.168.1.20:4173", "http://192.168.1.20:4173/", "lan"],
+              [
+                "desktop-lan-mdns:http://daodao-2.local:4173/",
+                "http://daodao-2.local:4173/",
+                "lan",
+              ],
+            ],
+          );
+        }),
+        {},
+        undefined,
+        undefined,
+        undefined,
+        "daodao-2.local",
+      ),
+  );
+
+  it.effect("deduplicates .local mDNS endpoint when T3CODE_DESKTOP_LAN_HOST matches it", () =>
+    withHarness(
+      lanNetworkInterfaces,
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        yield* serverExposure.configureFromSettings({ port: 4173 });
+        yield* serverExposure.setMode("network-accessible");
+
+        const endpoints = yield* serverExposure.getAdvertisedEndpoints;
+        assert.deepEqual(
+          endpoints.map((endpoint) => endpoint.httpBaseUrl),
+          ["http://127.0.0.1:4173/", "http://daodao-2.local:4173/"],
+        );
+      }),
+      { T3CODE_DESKTOP_LAN_HOST: "daodao-2.local" },
+      undefined,
+      undefined,
+      undefined,
+      "daodao-2.local",
     ),
   );
 });

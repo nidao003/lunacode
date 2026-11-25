@@ -571,3 +571,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     },
   },
 } satisfies DesktopBridge);
+
+contextBridge.exposeInMainWorld("lunaDesktopBridge", {
+  getRtkStatus: () => ipcRenderer.invoke("luna:rtk-get-status"),
+  initRtkGlobal: () => ipcRenderer.invoke("luna:rtk-init-global"),
+});
