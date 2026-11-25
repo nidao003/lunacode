@@ -13,6 +13,7 @@ import { AsyncResult } from "effect/reactivity";
 import type { ComponentProps } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LunaMobileSettingsSection } from "../../lunacode/LunaMobileSettingsSection";
 
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import { supportsSharedSettingsSync } from "@t3tools/client-runtime/state/shared-settings";
@@ -63,6 +64,7 @@ export function SettingsLabsRouteScreen() {
             "On a Mac, clone new worktrees from a checkout cached in the T3 home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
           )}
         />
+        <LunaMobileSettingsSection />
       </ScrollView>
     </SettingsScreen>
   );

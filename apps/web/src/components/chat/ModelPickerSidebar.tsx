@@ -152,12 +152,15 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const isSelected = props.selectedInstanceId === entry.instanceId;
             const isHovered = hoveredInstanceId === entry.instanceId;
             const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
+            const accountEmail = entry.snapshot.auth?.email?.trim();
 
             const tooltip = isUnavailable
               ? describeUnavailableInstance(entry, m)
               : isContextDisabled
                 ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
-                : entry.displayName;
+                : showInstanceBadge && accountEmail
+                  ? `${entry.displayName} · ${accountEmail}`
+                  : entry.displayName;
 
             const button = (
               <Toolbar.Button

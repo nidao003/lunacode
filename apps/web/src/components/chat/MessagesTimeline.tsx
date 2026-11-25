@@ -333,6 +333,7 @@ interface MessagesTimelineProps {
   findQuery?: string;
   activeFindMatch?: ThreadFindMatch | null;
   findNavigationId?: number;
+  turnOutputSpeedByRunId?: ReadonlyMap<RunId, number> | undefined;
 }
 
 export function MessagesTimeline(props: MessagesTimelineProps) {
@@ -426,6 +427,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   emptyPlaceholderInset,
   topFadeEnabled = false,
   historyControls,
+  turnOutputSpeedByRunId,
 }: MessagesTimelineProps) {
   const gt = useGT();
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
@@ -1164,6 +1166,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocally ?? null,
     onOpenWorktreeSetupTerminal: onOpenWorktreeSetupTerminal ?? null,
     workGroupViewState,
+    turnOutputSpeedByRunId,
   };
   const compactionAwaitingRow =
     isCompacting &&

@@ -126,6 +126,7 @@ import {
 } from "./thread-settings-sheet-state";
 import { formatProviderUpdateRequiredNotice } from "@t3tools/client-runtime/providerUpdateRequiredModels";
 import type { MessageResolver } from "../../i18n/messages";
+import { LunaMobileProviderHeaderBadge } from "../../lunacode/LunaMobileThreadSiblingLimits";
 
 const PRIMARY_PROVIDER_DRIVERS: ReadonlySet<string> = new Set([
   "claudeAgent",
@@ -154,6 +155,7 @@ function ProviderHeader(props: {
   readonly driver: string | undefined;
   readonly iconUrl: string | undefined;
   readonly label: string;
+  readonly trailingBadge?: ReactNode;
   /** A backend inside a provider's section, such as one of fx's: no icon. */
   readonly nested?: boolean;
   /** Why the section has no usable models, such as a signed-out backend. */
@@ -177,6 +179,7 @@ function ProviderHeader(props: {
       ) : (
         <Text className="text-sm font-t3-medium text-foreground-muted">{props.label}</Text>
       )}
+      {props.trailingBadge}
       {props.collapsible ? (
         <>
           <View className="flex-1" />
@@ -794,6 +797,12 @@ function ThreadSettingsProviderListHeader(props: {
       driver={props.provider.driver}
       iconUrl={props.provider.iconUrl}
       label={props.provider.label}
+      trailingBadge={
+        <LunaMobileProviderHeaderBadge
+          environmentId={session.environmentId}
+          providerKey={props.provider.key}
+        />
+      }
       modelCount={props.provider.modelCount}
       onToggle={onToggle}
     />

@@ -224,6 +224,7 @@ import { useOpenLinkedThread } from "./useOpenLinkedThread";
 import { useGlobalVoiceInput } from "../voice-input/VoiceInputProvider";
 import type { OrchestrationV2ProviderSession } from "@t3tools/contracts";
 import { voiceInputBlocksSubmission } from "@t3tools/client-runtime/voice-input";
+import type { LunaMobileThreadContextProps } from "../../lunacode/styles";
 
 export interface ThreadDetailScreenProps {
   readonly header?: React.ReactNode;
@@ -333,6 +334,7 @@ export interface ThreadDetailScreenProps {
   readonly onSubmitUserInput: () => Promise<unknown>;
   readonly onDismissUserInput: () => Promise<unknown>;
   readonly showContent?: boolean;
+  readonly lunaContext?: LunaMobileThreadContextProps | null | undefined;
 }
 
 // iOS questions overlay the controls; Android questions stack with child approvals.
@@ -1587,6 +1589,7 @@ function ThreadDetailBody(
                   skills={selectedProviderSkills}
                   onCiteAssistantText={canCiteAssistantText ? handleCiteAssistantText : undefined}
                   onUseArtifactTemplate={handleUseArtifactTemplate}
+                  turnOutputSpeedByRunId={props.lunaContext?.telemetry.speedByRunId}
                 />
               </ColumnWidth>
             </WorkspaceMutationIdProvider>
@@ -2000,6 +2003,7 @@ function ThreadDetailBody(
                         canSwitchProvider={props.canSwitchThreadProvider}
                         onHeightChange={handleComposerHeightChange}
                         onEditorFocusChange={handleOwnedInputFocusChange}
+                        lunaContext={props.lunaContext}
                       />
                     </>
                   )}

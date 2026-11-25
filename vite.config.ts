@@ -594,6 +594,10 @@ export default defineConfig({
           "**/*.test-fixtures.ts",
           "**/{test-fixtures,*TestFixtures}.ts",
           "apps/mobile/src/features/development/**",
+          // LunaCode fork features under lunacode/ intentionally ship Chinese copy directly.
+          "apps/web/src/lunacode/**",
+          "apps/mobile/src/lunacode/**",
+          "packages/client-runtime/src/lunacode/**",
           "packages/client-runtime/src/rpc/**",
         ],
         rules: { "t3code/no-untranslated-copy": "error" },

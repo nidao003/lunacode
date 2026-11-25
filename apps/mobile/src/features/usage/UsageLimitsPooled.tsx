@@ -1,6 +1,11 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId } from "@t3tools/contracts";
+import {
+  LunaMobileUsageLimitsToolbar,
+  LunaMobileUsageLimitsView,
+  type LunaMobileUsageLimitsViewMode,
+} from "../../lunacode/LunaMobileUsageLimitsView";
 import { providerClients } from "@t3tools/client-runtime/provider-clients";
 import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
 import {
@@ -481,14 +486,29 @@ export function UsageLimitsSection({
     selectedEnvironmentIds === null
       ? presentations
       : new Map([...presentations].filter(([id]) => selectedEnvironmentIds.has(id)));
-  const pools = collectLimitPools(collectLimitAccounts(selected), now);
+  const accounts = collectLimitAccounts(selected);
+  const pools = collectLimitPools(accounts, now);
   const m = useMessages();
   const notices = collectLimitNotices(selected, m);
   const externalLinks = collectExternalUsageLinks(selected, m);
   const colors = useProviderColors();
   const gt = useGT();
+  const [viewMode, setViewMode] = useState<LunaMobileUsageLimitsViewMode>("accounts");
+  const [maskEmails, setMaskEmails] = useState(true);
+  const multiAccountPoolCount = pools.filter((pool) => pool.accounts.length > 1).length;
+  const environmentIds = selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds];
   return (
     <View className="gap-6">
+      {pools.length > 0 ? (
+        <LunaMobileUsageLimitsToolbar
+          multiAccountPoolCount={multiAccountPoolCount}
+          totalAccounts={accounts.length}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          maskEmails={maskEmails}
+          onMaskEmailsChange={setMaskEmails}
+        />
+      ) : null}
       {pools.length === 0 &&
       notices.length === 0 &&
       failedLabels.length === 0 &&
@@ -499,41 +519,49 @@ export function UsageLimitsSection({
             : gt("No provider on the selected environments reports subscription limits.")}
         </Text>
       ) : null}
-      {pools.map((pool) => {
-        const windows = displayLimitWindows(pool);
-        return (
-          <Fragment key={pool.driver}>
-            <View className="gap-3">
-              <View className="flex-row items-center gap-2 px-1">
-                <ProviderIcon provider={pool.driver} size={18} />
-                <Text className="text-base font-t3-medium text-foreground">
-                  {providerClients.get(pool.driver)?.label ?? pool.driver}
-                </Text>
+      {pools.length > 0 && viewMode === "accounts" ? (
+        <LunaMobileUsageLimitsView
+          pools={pools}
+          now={now}
+          maskEmails={maskEmails}
+          environmentIds={environmentIds}
+          colors={colors}
+        />
+      ) : (
+        pools.map((pool) => {
+          const windows = displayLimitWindows(pool);
+          return (
+            <Fragment key={pool.driver}>
+              <View className="gap-3">
+                <View className="flex-row items-center gap-2 px-1">
+                  <ProviderIcon provider={pool.driver} size={18} />
+                  <Text className="text-base font-t3-medium text-foreground">
+                    {providerClients.get(pool.driver)?.label ?? pool.driver}
+                  </Text>
+                </View>
+                {windows.map((window) => {
+                  const details =
+                    pool.driver === "cursor"
+                      ? cursorUsageWindowDetails(window.id, pool, m)
+                      : undefined;
+                  return (
+                    <PoolWindowCard
+                      key={`${window.kind}:${window.id}`}
+                      pool={window}
+                      color={colors[usageProviderKind(pool.driver) ?? "codex"]}
+                      now={now}
+                      environmentIds={environmentIds}
+                      label={details?.label}
+                      description={details?.description}
+                      wide={wide}
+                    />
+                  );
+                })}
               </View>
-              {windows.map((window) => {
-                const details =
-                  pool.driver === "cursor"
-                    ? cursorUsageWindowDetails(window.id, pool, m)
-                    : undefined;
-                return (
-                  <PoolWindowCard
-                    key={`${window.kind}:${window.id}`}
-                    pool={window}
-                    color={colors[usageProviderKind(pool.driver) ?? "codex"]}
-                    now={now}
-                    environmentIds={
-                      selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]
-                    }
-                    label={details?.label}
-                    description={details?.description}
-                    wide={wide}
-                  />
-                );
-              })}
-            </View>
-          </Fragment>
-        );
-      })}
+            </Fragment>
+          );
+        })
+      )}
       {externalLinks.map((link) => (
         <View key={link.url} className="gap-3 rounded-xl border border-border-subtle p-4">
           <Text className="text-base font-t3-medium text-foreground">{link.label}</Text>

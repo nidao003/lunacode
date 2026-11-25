@@ -127,6 +127,8 @@ import {
   useThreadSettingsSheetPresentation,
   type NavigationWithFinishTransitioning,
 } from "./use-thread-settings-sheet-presentation";
+import { LunaMobileContextFooterBar } from "../../lunacode/LunaMobileContextFooterBar";
+import type { LunaMobileThreadContextProps } from "../../lunacode/styles";
 
 export const COMPOSER_COLLAPSED_CHROME = 60;
 export const THREAD_COMPOSER_BOTTOM_GUTTER = COMPOSER_BOTTOM_GUTTER;
@@ -192,6 +194,7 @@ export interface ThreadComposerProps {
   readonly canSwitchProvider: boolean;
   readonly onHeightChange?: (height: number) => void;
   readonly onEditorFocusChange?: (focused: boolean) => void;
+  readonly lunaContext?: LunaMobileThreadContextProps | null | undefined;
 }
 
 const COMPOSER_ATTACHMENT_ENTERING =
@@ -789,6 +792,14 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
             label={gt("Model unavailable. Open model settings.")}
             tone="text"
             onPress={openSettings}
+          />
+        ) : null}
+
+        {!props.isDraft && props.lunaContext && voiceInput.state.phase === "idle" ? (
+          <LunaMobileContextFooterBar
+            context={props.lunaContext}
+            canOperateThread={props.canOperateThread}
+            hasCompactableConversation={props.hasCompactableConversation}
           />
         ) : null}
 

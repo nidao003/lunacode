@@ -133,6 +133,19 @@ import { useStartSideChat } from "./useStartSideChat";
 import { useThreadStatusAnnouncements } from "./useThreadStatusAnnouncements";
 import type { ThreadInspectorMode, ThreadInspectorTarget } from "./thread-inspector-navigation";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
+import { deriveLunaContextTelemetry } from "@t3tools/client-runtime/lunacode/context-telemetry";
+import { buildDeterministicHandoff } from "@t3tools/client-runtime/lunacode/handoff-builder";
+import {
+  deriveLatestContextWindowSnapshot,
+  latestProviderTurnTokenUsage,
+} from "@t3tools/client-runtime/state/context-window";
+import {
+  createNewTaskDraft,
+  flushComposerDrafts,
+  getComposerDraftSnapshot,
+  setComposerDraftText,
+} from "../../state/use-composer-drafts";
+import type { LunaMobileThreadContextProps } from "../../lunacode/styles";
 
 function firstRouteParam(value: string | string[] | undefined): string | null {
   const first = Array.isArray(value) ? value[0] : value;
@@ -1029,6 +1042,112 @@ function ThreadRouteContent(
   }
 
   const serverConfig = routeEnvironmentRuntime?.serverConfig ?? null;
+  const activeThreadModelSelection =
+    selectedThreadWithDraftSettings?.modelSelection ?? selectedThread.modelSelection;
+  const matchedProvider =
+    serverConfig?.providers.find(
+      (provider) => provider.instanceId === activeThreadModelSelection.instanceId,
+    ) ?? null;
+  const providerDriver = matchedProvider?.driver ?? null;
+
+  const lunaContext: LunaMobileThreadContextProps | null = selectedThreadDetail
+    ? (() => {
+        const activeProviderThread =
+          selectedThreadDetail.providerThreads.find(
+            (thread) => thread.id === selectedThreadDetail.thread.activeProviderThreadId,
+          ) ??
+          selectedThreadDetail.providerThreads[selectedThreadDetail.providerThreads.length - 1] ??
+          null;
+        const activeThreadLiveTokenUsage = latestProviderTurnTokenUsage(
+          selectedThreadDetail.providerTurns,
+          selectedThreadDetail,
+          activeProviderThread,
+        );
+        const activeContextWindow = deriveLatestContextWindowSnapshot(
+          selectedThreadDetail.visibleTurnItems,
+          activeThreadLiveTokenUsage,
+          activeProviderThread,
+        );
+        const telemetry = deriveLunaContextTelemetry({
+          providerTurns: selectedThreadDetail.providerTurns,
+          attempts: selectedThreadDetail.attempts,
+          runs: selectedThreadDetail.runs,
+          visibleTurnItems: selectedThreadDetail.visibleTurnItems,
+          messages: selectedThreadDetail.messages,
+          contextWindow: activeContextWindow,
+          liveUsage: activeThreadLiveTokenUsage,
+          model: activeThreadModelSelection.model,
+          activeProviderThreadId: activeProviderThread?.id,
+        });
+
+        let latestAssistantText: string | null = null;
+        for (let index = selectedThreadDetail.messages.length - 1; index >= 0; index -= 1) {
+          const message = selectedThreadDetail.messages[index];
+          if (message && message.role === "assistant" && message.text.trim().length > 0) {
+            latestAssistantText = message.text;
+            break;
+          }
+        }
+
+        const getCurrentPrompt = () =>
+          composer.composerDraftKey ? getComposerDraftSnapshot(composer.composerDraftKey).text : "";
+
+        return {
+          telemetry,
+          providerDriver,
+          isCompacting: composer.isCompacting,
+          threadTitle: selectedThread.title,
+          latestAssistantText,
+          onCompactContext: (instructions?: string) => {
+            void composer.onSendCommand(
+              providerDriver === "claudeAgent" && instructions?.trim()
+                ? `/compact ${instructions.trim()}`
+                : "/compact",
+            );
+          },
+          onBuildHandoff: () =>
+            buildDeterministicHandoff({
+              threadTitle: selectedThread.title,
+              branch: selectedThread.branch,
+              model: activeThreadModelSelection.model,
+              messages: selectedThreadDetail.messages,
+              visibleTurnItems: selectedThreadDetail.visibleTurnItems,
+              plans: selectedThreadDetail.plans,
+            }),
+          onOpenHandoffThread: (markdown: string) => {
+            const draftKey = createNewTaskDraft({
+              environmentId: selectedThread.environmentId,
+              projectId: selectedThread.projectId,
+            });
+            setComposerDraftText(draftKey, markdown);
+            void flushComposerDrafts();
+            selectDetail({
+              name: "Thread",
+              params: {
+                draft: {
+                  draftId: draftKey,
+                  environmentId: String(selectedThread.environmentId),
+                  projectId: String(selectedThread.projectId),
+                  ...(selectedThread.branch ? { branch: selectedThread.branch } : {}),
+                  ...(selectedThreadDetailWorktreePath
+                    ? { worktreePath: selectedThreadDetailWorktreePath }
+                    : {}),
+                },
+              },
+            });
+          },
+          getCurrentPrompt,
+          onAppendToPrompt: (tailMarkdown: string) => {
+            const current = getCurrentPrompt();
+            const trimmedEnd = current.trimEnd();
+            composer.onChangeDraftMessage(
+              trimmedEnd.length > 0 ? `${trimmedEnd}\n\n${tailMarkdown}` : tailMarkdown,
+            );
+          },
+        };
+      })()
+    : null;
+
   const renderThreadRouteBody = () => (
     <>
       <GitActionProgressOverlay
@@ -1140,6 +1259,7 @@ function ThreadRouteContent(
           onChangeUserInputCustomAnswer={requests.onChangeUserInputCustomAnswer}
           onSubmitUserInput={requests.onSubmitUserInput}
           onDismissUserInput={requests.onDismissUserInput}
+          lunaContext={lunaContext}
         />
       </>
     </>

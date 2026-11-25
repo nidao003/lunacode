@@ -654,6 +654,34 @@
     "./provider-instance-ids": {
       "types": "./src/providerInstanceIds.ts",
       "default": "./src/providerInstanceIds.ts"
+    },
+    "./lunacode/preferences": {
+      "types": "./src/lunacode/preferences.ts",
+      "default": "./src/lunacode/preferences.ts"
+    },
+    "./lunacode/context-telemetry": {
+      "types": "./src/lunacode/contextTelemetry.ts",
+      "default": "./src/lunacode/contextTelemetry.ts"
+    },
+    "./lunacode/handoff-builder": {
+      "types": "./src/lunacode/handoffBuilder.ts",
+      "default": "./src/lunacode/handoffBuilder.ts"
+    },
+    "./lunacode/open-viking": {
+      "types": "./src/lunacode/openVikingClient.ts",
+      "default": "./src/lunacode/openVikingClient.ts"
+    },
+    "./lunacode/usage-limits-view": {
+      "types": "./src/lunacode/usageLimitsView.logic.ts",
+      "default": "./src/lunacode/usageLimitsView.logic.ts"
+    },
+    "./lunacode/multi-account": {
+      "types": "./src/lunacode/multiAccount.logic.ts",
+      "default": "./src/lunacode/multiAccount.logic.ts"
+    },
+    "./lunacode/subscription-tier": {
+      "types": "./src/lunacode/subscriptionTier.logic.ts",
+      "default": "./src/lunacode/subscriptionTier.logic.ts"
     }
   },
   "scripts": {

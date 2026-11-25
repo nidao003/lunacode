@@ -233,4 +233,50 @@ describe("mobile preferences state", () => {
       registry.dispose();
     }),
   );
+
+  it.effect("persists and merges lunaPreferences updates alongside existing preferences", () =>
+    Effect.gen(function* () {
+      let persisted: MobilePreferences.Preferences = { baseFontSize: 16 };
+      const state = makePreferencesState({
+        load: Effect.succeed(persisted),
+        savePatch: (patch) =>
+          Effect.sync(() => {
+            persisted = { ...persisted, ...patch };
+            return persisted;
+          }),
+        update: (transform) =>
+          Effect.sync(() => {
+            persisted = { ...persisted, ...transform(persisted) };
+            return persisted;
+          }),
+      });
+      const registry = AtomRegistry.make();
+      const unmount = registry.mount(state.preferencesAtom);
+      yield* AtomRegistry.getResult(registry, state.preferencesAtom, { suspendOnWaiting: true });
+
+      yield* state.savePreferences.run(registry, {
+        transform: () => ({
+          lunaPreferences: {
+            modelAlertThresholdsK: { "claude-sonnet-4-6": 120 },
+            compactTemplateEnabled: true,
+            compactTemplateText: "保留关键结论",
+            openViking: {
+              baseUrl: "http://192.168.3.160:1933",
+              apiKey: "",
+              maxChars: 1600,
+              minScore: 0.3,
+            },
+            customLanHost: "",
+          },
+        }),
+      });
+
+      expect(persisted.baseFontSize).toBe(16);
+      expect(persisted.lunaPreferences?.compactTemplateEnabled).toBe(true);
+      expect(persisted.lunaPreferences?.modelAlertThresholdsK["claude-sonnet-4-6"]).toBe(120);
+
+      unmount();
+      registry.dispose();
+    }),
+  );
 });

@@ -138,6 +138,9 @@ import {
   isTailscaleHttpsEndpoint,
   endpointDefaultPreferenceKey,
 } from "./ConnectionsSettings.logic";
+import { LunaLanDomainRow } from "~/lunacode/LunaLanDomainRow";
+import { mergeCustomLanAdvertisedEndpoint } from "~/lunacode/lanDomain.logic";
+import { useLunaPreferences } from "~/lunacode/preferences";
 import {
   AdvertisedEndpointListRow,
   AuthorizedClientsHeaderAction,
@@ -465,8 +468,13 @@ function ConnectionsSettingsContent({
   const desktopWslError = desktopWslMutationError ?? desktopWsl.error;
   const isLoadingWslState = desktopWsl.isPending && desktopWsl.data === null;
   const desktopServerExposureState = desktopNetworkAccess.data?.serverExposureState ?? null;
-  const desktopAdvertisedEndpoints =
+  const [lunaPreferences, updateLunaPreferences] = useLunaPreferences();
+  const rawDesktopAdvertisedEndpoints =
     desktopNetworkAccess.data?.advertisedEndpoints ?? EMPTY_ADVERTISED_ENDPOINTS;
+  const desktopAdvertisedEndpoints = mergeCustomLanAdvertisedEndpoint(
+    rawDesktopAdvertisedEndpoints,
+    lunaPreferences.customLanHost,
+  );
   const desktopServerExposureError =
     desktopServerExposureMutationError ?? desktopNetworkAccess.error;
   const desktopAccessManagementError =
@@ -861,6 +869,23 @@ function ConnectionsSettingsContent({
     : null;
   const handleSetDefaultAdvertisedEndpoint = (endpoint: AdvertisedEndpoint) => {
     setDefaultAdvertisedEndpointKey(endpointDefaultPreferenceKey(endpoint));
+  };
+  const handleSaveCustomLanHost = (normalizedUrl: string) => {
+    updateLunaPreferences((current) => ({ ...current, customLanHost: normalizedUrl }));
+    const matchingExisting = rawDesktopAdvertisedEndpoints.find(
+      (endpoint) => endpoint.httpBaseUrl.toLowerCase() === normalizedUrl.toLowerCase(),
+    );
+    setDefaultAdvertisedEndpointKey(
+      matchingExisting
+        ? endpointDefaultPreferenceKey(matchingExisting)
+        : "desktop-core:lan-custom:http",
+    );
+  };
+  const handleClearCustomLanHost = () => {
+    updateLunaPreferences((current) => ({ ...current, customLanHost: "" }));
+    if (defaultDesktopAdvertisedEndpointKey === "desktop-core:lan-custom:http") {
+      setDefaultAdvertisedEndpointKey(null);
+    }
   };
 
   const renderNetworkAccessToggle = () => (
@@ -1390,6 +1415,18 @@ function ConnectionsSettingsContent({
               <>
                 {renderNetworkAccessRow()}
                 {renderEndpointRows()}
+                {isLocalBackendNetworkAccessible ? (
+                  <LunaLanDomainRow
+                    lanEndpoints={visibleDesktopNetworkAdvertisedEndpoints.filter(
+                      (endpoint) => endpoint.reachability === "lan",
+                    )}
+                    customLanHost={lunaPreferences.customLanHost}
+                    defaultEndpointKey={defaultDesktopAdvertisedEndpointKey}
+                    onSelectDefaultEndpoint={handleSetDefaultAdvertisedEndpoint}
+                    onSaveCustomLanHost={handleSaveCustomLanHost}
+                    onClearCustomLanHost={handleClearCustomLanHost}
+                  />
+                ) : null}
                 {renderTailscaleRow()}
                 {renderWslRow()}
               </>

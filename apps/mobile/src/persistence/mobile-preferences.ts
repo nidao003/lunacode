@@ -7,6 +7,10 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { SavedViewIdentity } from "@t3tools/client-runtime/saved-views";
 import {
+  sanitizeLunaPreferences,
+  type LunaPreferences,
+} from "@t3tools/client-runtime/lunacode/preferences";
+import {
   EnvironmentId,
   IssueInvolvement,
   IssueListSort,
@@ -183,6 +187,7 @@ export interface Preferences {
   readonly workspaceSelections?: WorkspaceSelections;
   readonly pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
   readonly issueSavedViews?: ReadonlyArray<IssueSavedView>;
+  readonly lunaPreferences?: LunaPreferences;
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
@@ -270,6 +275,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     workspaceSelections?: WorkspaceSelections;
     pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
     issueSavedViews?: ReadonlyArray<IssueSavedView>;
+    lunaPreferences?: LunaPreferences;
   } = {};
 
   if (Array.isArray(parsed.hiddenNavigationTabs)) {
@@ -434,6 +440,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (Array.isArray(parsed.issueSavedViews)) {
     preferences.issueSavedViews = parsed.issueSavedViews.filter(isIssueSavedView);
+  }
+  if (parsed.lunaPreferences !== undefined) {
+    preferences.lunaPreferences = sanitizeLunaPreferences(parsed.lunaPreferences);
   }
   return preferences;
 }

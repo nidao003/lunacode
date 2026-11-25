@@ -19,6 +19,8 @@ import {
   deriveThreadPendingBackgroundTasks,
   presentThreadShellFromProjection,
 } from "./ChatView.logic";
+import { deriveLunaContextTelemetry } from "../lunacode/contextTelemetry";
+import { buildDeterministicHandoff } from "../lunacode/handoffBuilder";
 import { usePullRequestDraftThread } from "./chat/usePullRequestDraftThread";
 import { usePullRequestLinking } from "../hooks/usePullRequestLinking";
 import { useComposerSelection } from "./chat/useComposerSelection";
@@ -1559,6 +1561,19 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadLiveTokenUsage,
     activeProviderThread,
   );
+  const lunaContextTelemetry = isServerThread
+    ? deriveLunaContextTelemetry({
+        providerTurns: serverProjection?.providerTurns ?? [],
+        attempts: serverProjection?.attempts ?? [],
+        runs: serverProjection?.runs ?? [],
+        visibleTurnItems: serverVisibleTurnItems ?? [],
+        messages: serverProjection?.messages ?? [],
+        contextWindow: activeContextWindow,
+        liveUsage: activeThreadLiveTokenUsage ?? null,
+        model: activeUsageModel,
+        activeProviderThreadId: activeProviderThread?.id,
+      })
+    : null;
   const pendingBackgroundTasks = deriveThreadPendingBackgroundTasks(serverProjection);
   const activeWorkStartedAt =
     deriveActiveWorkStartedAt(activeActivityRun, activeRuntime, localDispatchStartedAt) ??
@@ -2982,8 +2997,13 @@ export default function ChatView(props: ChatViewProps) {
       composerDraftTarget,
       setThreadError,
     });
-  const onCompactContext = () => {
+  const onCompactContext = (instructions?: string) => {
     if (compactDisabled) return;
+    const trimmed = instructions?.trim() ?? "";
+    if (selectedProvider === "claudeAgent" && trimmed.length > 0) {
+      void sendStandaloneCommand(`/compact ${trimmed}`, gt("Failed to compact context."));
+      return;
+    }
     void sendStandaloneCommand("/compact", gt("Failed to compact context."));
   };
 
@@ -3131,6 +3151,30 @@ export default function ChatView(props: ChatViewProps) {
   const sendPreviewAnnotationStable = useStableCallback(sendPreviewAnnotation);
   const onComposerResumeStable = useStableCallback(onResume);
   const onComposerCompactContextStable = useStableCallback(onCompactContext);
+  const lunaLatestAssistantText =
+    [...(serverProjection?.messages ?? [])]
+      .reverse()
+      .find((msg) => msg.role === "assistant" && msg.text.trim().length > 0)?.text ?? null;
+  const onBuildLunaHandoff = () =>
+    buildDeterministicHandoff({
+      threadTitle: activeThread?.title ?? null,
+      branch: activeThreadBranch,
+      model: activeUsageModel,
+      messages: serverProjection?.messages ?? [],
+      visibleTurnItems: serverVisibleTurnItems ?? [],
+      plans: serverProjection?.plans ?? [],
+    });
+  const onBuildLunaHandoffStable = useStableCallback(onBuildLunaHandoff);
+  const onOpenLunaHandoffThread = (handoffMarkdown: string) => {
+    if (!activeProject) return;
+    void handleNewThread(scopeProjectRef(environmentId, activeProject.id), {
+      branch: activeThreadBranch,
+      worktreePath: activeThread?.worktreePath ?? null,
+      envMode: activeThread?.worktreePath ? "worktree" : "local",
+      prompt: handoffMarkdown,
+    });
+  };
+  const onOpenLunaHandoffThreadStable = useStableCallback(onOpenLunaHandoffThread);
   // Read from the projection the footer renders, so the scroll below sees the new message.
   const pendingGuestMessageIds =
     serverProjection?.thread.guestShare?.messages.flatMap((message) =>
@@ -3650,6 +3694,7 @@ export default function ChatView(props: ChatViewProps) {
                   hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
                   emptyPlaceholderInset={composerReservedHeight}
                   topFadeEnabled={!hasTimelineTopBanner}
+                  turnOutputSpeedByRunId={lunaContextTelemetry?.speedByRunId}
                   {...(threadHistoryControls === undefined
                     ? {}
                     : { historyControls: threadHistoryControls })}
@@ -3872,6 +3917,16 @@ export default function ChatView(props: ChatViewProps) {
                                 onPageScrollKeyUp={onComposerPageScrollKeyUpStable}
                                 onPageScrollRelease={onComposerPageScrollReleaseStable}
                                 onCompactContext={onComposerCompactContextStable}
+                                lunaContextTelemetry={lunaContextTelemetry}
+                                lunaProviderDriver={selectedProvider}
+                                onBuildLunaHandoff={
+                                  isServerThread ? onBuildLunaHandoffStable : undefined
+                                }
+                                onOpenLunaHandoffThread={
+                                  activeProject ? onOpenLunaHandoffThreadStable : undefined
+                                }
+                                lunaThreadTitle={activeThread?.title ?? null}
+                                lunaLatestAssistantText={lunaLatestAssistantText}
                                 onSend={onComposerSendStable}
                                 onResume={onComposerResumeStable}
                                 onInterrupt={onInterruptStable}

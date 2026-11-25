@@ -9,6 +9,7 @@ import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import { LunaCodeSettingsSection } from "../../lunacode/LunaCodeSettingsSection";
 import { useSearchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeContext";
@@ -28,6 +29,7 @@ export function LabsSettingsPanel() {
         <SimlockHostsRow />
         <FastWorktreeCheckoutRow />
       </SettingsSection>
+      <LunaCodeSettingsSection />
     </SettingsPageContainer>
   );
 }

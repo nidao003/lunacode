@@ -28,6 +28,7 @@ import {
   useQuietThreadShell,
 } from "../../state/entities";
 import { MessageCopyButton } from "./MessageCopyButton";
+import { LunaTurnSpeedBadge } from "../../lunacode/LunaTurnSpeedBadge";
 import { AssistantCitationSource } from "./AssistantCitationSource";
 import { resolveAssistantMessageCopyState } from "./MessagesTimeline.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -277,6 +278,9 @@ function AssistantMessageMeta({
           </TooltipPopup>
         </Tooltip>
       )}
+      {!message.streaming && projectedItem?.item.runId ? (
+        <LunaTurnSpeedBadge speed={ctx.turnOutputSpeedByRunId?.get(projectedItem.item.runId)} />
+      ) : null}
     </div>
   );
 }

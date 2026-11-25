@@ -1,3 +1,4 @@
+import { LunaThreadSiblingLimits } from "../../lunacode/LunaThreadSiblingLimits";
 import type {
   ProviderInstanceId,
   ServerProvider,
@@ -76,6 +77,11 @@ export function ThreadDetailsUsage({
           <InstanceRows limits={resolved.limits} now={now} />
         )}
       </div>
+      <LunaThreadSiblingLimits
+        activeInstanceId={providerInstanceId}
+        providers={providers}
+        now={now}
+      />
     </ThreadDetailsSection>
   );
 }

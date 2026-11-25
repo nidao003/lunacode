@@ -97,6 +97,7 @@ import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
+import { LunaMultiAccountOverviewCard } from "../../lunacode/LunaMultiAccountOverviewCard";
 import { useManagedPolicy } from "~/state/managedPolicy";
 import { ExpandableText } from "./ExpandableText";
 import { IntervalSecondsField } from "./IntervalSecondsField";
@@ -1097,6 +1098,14 @@ export function EnvironmentProviderSettings({
             />
           </SettingsGroup>
         ) : null}
+        <LunaMultiAccountOverviewCard
+          providerInstances={settings.providerInstances}
+          serverProviders={serverProviders}
+          selectedInstanceId={selectedRow?.instanceId ?? null}
+          onSelectInstance={setSelectedInstanceId}
+          canAddProvider={canAddProvider && !readOnly}
+          onAddProvider={() => setIsAddInstanceDialogOpen(true)}
+        />
         <SettingsGroup
           divided={false}
           className={cn(

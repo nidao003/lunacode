@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import { providerClients } from "@t3tools/client-runtime/provider-clients";
 import type { EnvironmentId, UsageLimitsReport } from "@t3tools/contracts";
 import { T, useGT } from "gt-react-native";
@@ -5,6 +6,11 @@ import { Pressable, ScrollView, View } from "react-native";
 
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
+import {
+  formatMobileAccountPlanDetail,
+  LunaMobileThreadSiblingLimits,
+} from "../../lunacode/LunaMobileThreadSiblingLimits";
+import { environmentPresentations } from "../../state/presentation";
 import { AccountLimits, ResetCredits } from "../usage/UsageLimitsSection";
 
 export function ComposerUsageLimits({
@@ -19,6 +25,8 @@ export function ComposerUsageLimits({
   readonly onClose: () => void;
 }) {
   const gt = useGT();
+  const providersByEnvironment = useAtomValue(environmentPresentations.providersByEnvironmentAtom);
+  const environmentProviders = providersByEnvironment.get(environmentId) ?? [];
   const now = Date.parse(report.createdAt);
   const close = (
     <Pressable
@@ -55,7 +63,7 @@ export function ComposerUsageLimits({
                       : driverLabel)
                   : account.label
               }
-              detail={account.plan}
+              detail={formatMobileAccountPlanDetail(account.plan, account.limits.checkedAt, now)}
               limits={account.limits}
               now={now}
               trailing={index === 0 ? close : undefined}
@@ -73,6 +81,14 @@ export function ComposerUsageLimits({
             />
           );
         })}
+        {report.accounts.length > 0 ? (
+          <LunaMobileThreadSiblingLimits
+            activeInstanceId={report.accounts[0]?.instanceId ?? null}
+            currentDriver={report.accounts[0]?.driver}
+            providers={environmentProviders}
+            now={now}
+          />
+        ) : null}
         {report.accounts.length === 0 ? (
           <View className="flex-row items-center gap-3 px-4 pt-3">
             <Text className="min-w-0 flex-1 text-base text-foreground">

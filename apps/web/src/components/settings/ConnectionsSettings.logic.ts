@@ -418,6 +418,12 @@ export function endpointDefaultPreferenceKey(endpoint: AdvertisedEndpoint): stri
   if (endpoint.id.startsWith("desktop-loopback:")) {
     return "desktop-core:loopback:http";
   }
+  if (endpoint.id.startsWith("desktop-lan-mdns:")) {
+    return "desktop-core:lan-mdns:http";
+  }
+  if (endpoint.id.startsWith("desktop-lan-custom:")) {
+    return "desktop-core:lan-custom:http";
+  }
   if (endpoint.id.startsWith("desktop-lan:")) {
     return "desktop-core:lan:http";
   }

@@ -2,11 +2,13 @@ import { type DesktopWslState, EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
   applyWslEnableSelection,
+  endpointDefaultPreferenceKey,
   isServerNetworkAccessible,
   parseManualDesktopSshTarget,
   resolveAccessEnvironmentId,
   resolveCurrentOriginPairingUrl,
   resolveTailscaleServeBaseUrl,
+  selectPairingEndpoint,
   selectQrEndpointOption,
   togglePairingScopeSelection,
 } from "./ConnectionsSettings.logic";
@@ -235,5 +237,44 @@ describe("isServerNetworkAccessible", () => {
     { authPolicy: null, directEndpoints: served, expected: false },
   ] as const)("$authPolicy with $directEndpoints.length endpoints", (row) => {
     expect(isServerNetworkAccessible(row)).toBe(row.expected);
+  });
+});
+
+describe("endpointDefaultPreferenceKey", () => {
+  const makeEndpoint = (id: string, httpBaseUrl: string) => ({
+    id,
+    label: id,
+    provider: { id: "desktop-core", label: "Desktop", kind: "core" as const, isAddon: false },
+    httpBaseUrl,
+    wsBaseUrl: httpBaseUrl.replace(/^http/, "ws"),
+    reachability: "lan" as const,
+    compatibility: {
+      hostedHttpsApp: "mixed-content-blocked" as const,
+      desktopApp: "compatible" as const,
+    },
+    source: "desktop-core" as const,
+    status: "available" as const,
+  });
+
+  it("maps .local mDNS and custom LAN endpoints to distinct preference keys", () => {
+    const mdns = makeEndpoint(
+      "desktop-lan-mdns:http://daodao-2.local:3773/",
+      "http://daodao-2.local:3773/",
+    );
+    const custom = makeEndpoint(
+      "desktop-lan-custom:http://daodao-2.local:8000/",
+      "http://daodao-2.local:8000/",
+    );
+    const ip = makeEndpoint("desktop-lan:http://192.168.1.20:3773", "http://192.168.1.20:3773/");
+
+    expect(endpointDefaultPreferenceKey(mdns)).toBe("desktop-core:lan-mdns:http");
+    expect(endpointDefaultPreferenceKey(custom)).toBe("desktop-core:lan-custom:http");
+    expect(endpointDefaultPreferenceKey(ip)).toBe("desktop-core:lan:http");
+    expect(selectPairingEndpoint([ip, mdns, custom], "desktop-core:lan-mdns:http")?.id).toBe(
+      mdns.id,
+    );
+    expect(selectPairingEndpoint([ip, mdns, custom], "desktop-core:lan-custom:http")?.id).toBe(
+      custom.id,
+    );
   });
 });

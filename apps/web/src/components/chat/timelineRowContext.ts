@@ -108,6 +108,7 @@ export interface TimelineRowSharedState {
   onWorktreeSetupWorkLocally: (() => void) | null;
   onOpenWorktreeSetupTerminal: ((terminalId: string) => void) | null;
   workGroupViewState: WorkGroupViewState;
+  turnOutputSpeedByRunId?: ReadonlyMap<RunId, number> | undefined;
 }
 
 export interface TimelineRowActivityState {

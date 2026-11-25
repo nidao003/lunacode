@@ -1047,6 +1047,12 @@ export function ProviderInstanceCard({
       <>
         {statusDotNode}
         <span>{summary.headline}</span>
+        {enabled && authEmail ? (
+          <>
+            <span>·</span>
+            <ProviderAuthEmail email={authEmail} />
+          </>
+        ) : null}
         {inlineStatusDetail ? (
           <span className="min-w-0 [overflow-wrap:anywhere]">· {inlineStatusDetail}</span>
         ) : null}
@@ -1224,6 +1230,11 @@ export function ProviderInstanceCard({
                 </span>
               </ProviderStatusDiagnostic>
             </span>
+            {enabled && authEmail ? (
+              <span className="mt-0.5 block truncate font-mono text-2xs text-muted-foreground/90">
+                {authEmail}
+              </span>
+            ) : null}
           </span>
         </div>
         <span className="pointer-events-none relative flex h-5 shrink-0 items-center gap-1 *:pointer-events-auto">

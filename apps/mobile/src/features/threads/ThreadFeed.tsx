@@ -337,6 +337,7 @@ import { loopbackUrlForDevice } from "../browser/browserTabs";
 import { useOpenLocalPreview } from "../browser/useOpenLocalPreview";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import { useMessageTimeFormatter } from "./useMessageTimeFormatter";
+import { LunaMobileTurnSpeedBadge } from "../../lunacode/LunaMobileTurnSpeedBadge";
 
 const WIDE_MARKDOWN_BLOCK_OPTIONS = {
   // iOS blockquotes and selectable text measure separately; definite bubble width matches UIKit's drawing width.
@@ -407,6 +408,7 @@ export interface ThreadFeedProps {
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
   readonly onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
   readonly onCiteAssistantText?: (citation: AssistantCitation) => void;
+  readonly turnOutputSpeedByRunId?: ReadonlyMap<RunId, number> | undefined;
 }
 
 const USER_MESSAGE_COPY_MENU_ACTIONS = [
@@ -1982,6 +1984,7 @@ function renderFeedEntry(
     | "threadId"
     | "workspaceRoot"
     | "worktreeSetup"
+    | "turnOutputSpeedByRunId"
   > & {
     /** The fold row of the turn the worktree setup handed off to. */
     readonly setupFoldRowId: string | null;
@@ -2730,6 +2733,11 @@ function renderFeedEntry(
             <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
               {timestampLabel}
             </Text>
+            <LunaMobileTurnSpeedBadge
+              tokensPerSecond={
+                message.runId ? props.turnOutputSpeedByRunId?.get(message.runId) : undefined
+              }
+            />
           </View>
         ) : null}
       </Animated.View>
@@ -4306,6 +4314,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             onEditPendingMessage: props.onEditPendingMessage,
             onUseArtifactTemplate: props.onUseArtifactTemplate,
             onCiteAssistantText: props.onCiteAssistantText,
+            turnOutputSpeedByRunId: props.turnOutputSpeedByRunId,
             threadId: props.threadId,
             copiedRowId,
             expandedWorkRows,

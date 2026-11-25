@@ -1,4 +1,9 @@
 import {
+  LunaUsageLimitsToolbar,
+  LunaUsageLimitsView,
+  type LunaUsageLimitsViewMode,
+} from "../../lunacode/LunaUsageLimitsView";
+import {
   CHATGPT_USAGE_URL,
   collectLimitAccounts,
   collectLimitPools,
@@ -432,17 +437,17 @@ function SegmentTriggers({
         {paceMark ? (
           <span
             aria-hidden
-            className="absolute inset-y-0.5 w-0.5 -translate-x-1/2 rounded-full bg-foreground"
+            className="pointer-events-none absolute inset-y-0.5 z-0 w-0.5 -translate-x-1/2 rounded-full bg-foreground/85 @2xl/pool:top-auto @2xl/pool:bottom-0.5 @2xl/pool:h-2"
             style={paceMark.tick}
           />
         ) : null}
         <span
           aria-hidden
-          className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-md text-3xs leading-none font-semibold text-foreground/80 tabular-nums @2xl/pool:hidden"
+          className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden rounded-md text-3xs leading-none font-semibold text-foreground/80 tabular-nums @2xl/pool:hidden"
         >
           {index}
         </span>
-        <div className="relative hidden h-full min-w-0 items-center gap-1.5 overflow-hidden rounded-md px-2 text-xs @2xl/pool:flex">
+        <div className="relative z-10 hidden h-full min-w-0 items-center gap-1.5 overflow-hidden rounded-md px-2 text-xs @2xl/pool:flex">
           {showAccountName ? (
             <AccountName
               account={account}
@@ -680,11 +685,17 @@ export function UsageLimitsPooled({
 }) {
   const gt = useGT();
   const m = useMessages();
+  const [viewMode, setViewMode] = useState<LunaUsageLimitsViewMode>("accounts");
+  const [maskEmails, setMaskEmails] = useState(false);
   const [segmentPopover] = useState(() => PopoverCreateHandle<SegmentPayload>());
   const segmentPopoverActions = useRef<PopoverPrimitive.Root.Actions | null>(null);
   const pools = collectLimitPools(collectLimitAccounts(presentations), now);
   const notices = collectLimitNotices(presentations, m);
   const externalLinks = collectExternalUsageLinks(presentations, m);
+  const multiAccountPoolCount = pools.filter((pool) => pool.accounts.length > 1).length;
+  const hasMultiAccountPool = multiAccountPoolCount > 0;
+  const totalAccounts = pools.reduce((sum, pool) => sum + pool.accounts.length, 0);
+  const showPerAccountCards = hasMultiAccountPool && viewMode === "accounts";
   return (
     <div className="flex flex-col gap-8">
       {pools.length === 0 && notices.length === 0 && externalLinks.length === 0 ? (
@@ -692,13 +703,27 @@ export function UsageLimitsPooled({
           <T>No provider on the selected environments reports subscription limits.</T>
         </p>
       ) : null}
-      <SegmentPopoverContext value={segmentPopover}>
-        {pools.map((pool) => (
-          <Fragment key={pool.driver}>
-            <PoolSection pool={pool} now={now} />
-          </Fragment>
-        ))}
-      </SegmentPopoverContext>
+      {hasMultiAccountPool ? (
+        <LunaUsageLimitsToolbar
+          multiAccountPoolCount={multiAccountPoolCount}
+          totalAccounts={totalAccounts}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          maskEmails={maskEmails}
+          onMaskEmailsChange={setMaskEmails}
+        />
+      ) : null}
+      {showPerAccountCards ? (
+        <LunaUsageLimitsView pools={pools} now={now} maskEmails={maskEmails} />
+      ) : (
+        <SegmentPopoverContext value={segmentPopover}>
+          {pools.map((pool) => (
+            <Fragment key={pool.driver}>
+              <PoolSection pool={pool} now={now} />
+            </Fragment>
+          ))}
+        </SegmentPopoverContext>
+      )}
       <Popover handle={segmentPopover} actionsRef={segmentPopoverActions}>
         {({ payload }) =>
           payload ? (

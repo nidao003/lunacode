@@ -27,6 +27,8 @@ import { ControlPill } from "../../components/ui/ControlPill";
 import { Menu } from "../../components/ui/Menu";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { environmentPresentations } from "../../state/presentation";
+import { useNowMinuteMs } from "../../lib/clock";
+import { LunaMobileMultiAccountOverviewCard } from "../../lunacode/LunaMobileMultiAccountOverviewCard";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useEnvironmentsWithScope } from "../../state/session";
@@ -94,6 +96,7 @@ function EnvironmentProviders({
   readonly environment: SettingsTarget;
   readonly providers: ReadonlyArray<ServerProvider>;
 }) {
+  const now = useNowMinuteMs();
   const accounts = providers.filter(canManageProvider);
   // Claude has no in-app sign-in; each account is its own instance on a signed-in config folder.
   const claudeAccounts = providers.filter(
@@ -105,6 +108,11 @@ function EnvironmentProviders({
   );
   return (
     <>
+      <LunaMobileMultiAccountOverviewCard
+        providerInstances={environment.serverConfig.settings.providerInstances}
+        serverProviders={providers}
+        now={now}
+      />
       {accounts.map((provider, index) => (
         <ProviderAccount
           key={provider.instanceId}

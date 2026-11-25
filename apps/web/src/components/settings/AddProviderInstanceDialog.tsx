@@ -63,6 +63,7 @@ import { ProviderWizardAuthenticationStep } from "./ProviderWizardAuthentication
 import { resolveOfficialAcpRegistryIconUrl } from "./AcpRegistryIcon";
 import { AddManagedCodexAccountDialog } from "./CodexSetupSection";
 import { MultipleAccountsNote } from "./MultipleAccountsNote";
+import { LunaMultiAccountHelper } from "../../lunacode/LunaMultiAccountHelper";
 import { ProviderEnvironmentSection } from "./ProviderInstanceCard";
 import { useSecretSources } from "./SecretSourceInput";
 
@@ -732,6 +733,15 @@ export function AddProviderInstanceDialog({
                   }
                 />
               </SettingsGroup>
+
+              {!isAcpRegistry && wizardStep === 2 ? (
+                <LunaMultiAccountHelper
+                  driver={driver}
+                  instanceId={instanceId}
+                  configDraft={configDraft}
+                  onUpdateConfig={setConfigDraft}
+                />
+              ) : null}
 
               {!isAcpRegistry && driverSettingsFields.length > 0 ? (
                 <SettingsGroup variant="plain" className={cn(wizardStep !== 2 && "hidden")}>

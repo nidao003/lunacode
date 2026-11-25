@@ -1,4 +1,7 @@
 import { copySnapshot } from "./copySnapshot";
+import { type LunaContextTelemetry } from "../../lunacode/contextTelemetry";
+import { type DeterministicHandoffResult } from "../../lunacode/handoffBuilder";
+import { LunaContextFooterBar } from "../../lunacode/LunaContextFooterBar";
 import { VoiceInputSetup } from "./VoiceInputSetup";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { insertAttachmentReferencesForDraft } from "./composerAttachmentReferences";
@@ -454,7 +457,7 @@ export interface ChatComposerProps {
   }> | null;
   onRemoveEditingQueuedAttachment: (attachmentId: string) => void;
 
-  onCompactContext: () => void;
+  onCompactContext: (instructions?: string) => void;
   onSend: (
     e?: { preventDefault: () => void },
     dispatchMode?: ComposerDispatchMode,
@@ -488,6 +491,12 @@ export interface ChatComposerProps {
   setThreadError: (threadId: ThreadId | null, error: string | null) => void;
   onExpandImage: (preview: ExpandedImagePreview) => void;
   onFileOpen: (attachment: ChatFileAttachment) => void;
+  lunaContextTelemetry?: LunaContextTelemetry | null | undefined;
+  lunaProviderDriver?: ProviderDriverKind | null | undefined;
+  onBuildLunaHandoff?: (() => DeterministicHandoffResult) | undefined;
+  onOpenLunaHandoffThread?: ((markdown: string) => void) | undefined;
+  lunaThreadTitle?: string | null | undefined;
+  lunaLatestAssistantText?: string | null | undefined;
 }
 
 const NO_PROVIDER_SKILLS: ServerProvider["skills"] = [];
@@ -580,6 +589,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onFileOpen,
     editingQueuedAttachments,
     onRemoveEditingQueuedAttachment,
+    lunaContextTelemetry = null,
+    lunaProviderDriver = null,
+    onBuildLunaHandoff,
+    onOpenLunaHandoffThread,
+    lunaThreadTitle = null,
+    lunaLatestAssistantText = null,
   } = props;
   const {
     activePendingProgress: incomingPendingProgress,
@@ -3847,6 +3862,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   >
                     {composerControls}
                   </div>
+                  {!dictationTakesFooter && lunaContextTelemetry ? (
+                    <LunaContextFooterBar
+                      telemetry={lunaContextTelemetry}
+                      canCompact={!compactDisabled}
+                      providerDriver={lunaProviderDriver}
+                      onCompactContext={onCompactContext}
+                      onBuildHandoff={onBuildLunaHandoff}
+                      onOpenHandoffThread={onOpenLunaHandoffThread}
+                      getCurrentPrompt={() => promptRef.current}
+                      onAppendToPrompt={(tailMarkdown) => {
+                        const current = promptRef.current;
+                        const next =
+                          current.trim().length > 0
+                            ? `${current.trimEnd()}\n\n${tailMarkdown}`
+                            : tailMarkdown;
+                        setPrompt(next);
+                      }}
+                      threadTitle={lunaThreadTitle}
+                      latestAssistantText={lunaLatestAssistantText}
+                    />
+                  ) : null}
                   <ComposerFooterPrimaryActions
                     // Stop state belongs to one thread; the composer stays mounted across threads.
                     key={`${environmentId}:${activeThreadId ?? "new"}`}
