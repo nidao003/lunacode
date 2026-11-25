@@ -1,5 +1,7 @@
 # Contributing
 
+> **LunaCode Fork:** This repository (`nidao003/lunacode`) is a fork of [`pingdotgg/t3code`](https://github.com/pingdotgg/t3code). If you are contributing to **LunaCode**, develop against the `lunacode` branch (never `main`) and follow [`AGENTS.fork.md`](./AGENTS.fork.md). Upstream T3 Code's original contribution rules are preserved below for reference when submitting fixes upstream.
+
 T3 Code is a project built by and for the community of agentic devs pushing the absolute limits of
 modern AI tools.
 

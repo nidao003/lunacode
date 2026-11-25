@@ -1,7 +1,10 @@
 # T3 Code docs
 
+> **LunaCode Fork:** This repository is [**LunaCode**](../README.md) (`nidao003/lunacode`), a fork of [T3 Code](https://github.com/pingdotgg/t3code). Start with the [LunaCode features & fork guide](./lunacode.md) and [`AGENTS.fork.md`](../AGENTS.fork.md) for everything added or changed on top of upstream T3 Code.
+
 ## Using T3 Code
 
+- [LunaCode features & fork guide](./lunacode.md)
 - [Install T3 Code](./user/install.md)
 - [Messages and context](./user/composer.md)
 - [Working with threads](./user/thread-sidebar.md)

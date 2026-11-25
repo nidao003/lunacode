@@ -1,108 +1,145 @@
 <p align="center">
-  <a href="https://t3.codes">
-    <img src="./assets/prod/t3-black-web-icon-192x192.png" width="80" height="80" alt="T3 Code logo" />
-  </a>
+  <img src="./assets/lunacode/lunacode-web-icon-192x192.png" width="88" height="88" alt="LunaCode Chang'e icon" />
 </p>
 
-<h1 align="center">T3 Code</h1>
+<h1 align="center">LunaCode</h1>
 
-<p align="center">The open-source control plane for coding agents.</p>
+<p align="center">A privacy-first, multi-surface control plane for coding agents — forked from <a href="https://github.com/pingdotgg/t3code">T3 Code</a>.</p>
 
 <p align="center">
-  <a href="https://t3.codes/download"><strong>Download</strong></a> ·
-  <a href="https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824">iOS</a> ·
-  <a href="https://play.google.com/store/apps/details?id=com.t3tools.t3code">Android</a> ·
-  <a href="https://app.t3.codes">Web</a> ·
-  <a href="./docs/README.md">Docs</a> ·
-  <a href="https://discord.gg/jn4EGJjrvv">Discord</a>
+  <a href="#whats-new-in-lunacode-vs-upstream-t3-code">What's New in LunaCode</a> ·
+  <a href="#design-principles--guardrails">Guardrails</a> ·
+  <a href="#build--install-from-source">Build &amp; Install</a> ·
+  <a href="./docs/lunacode.md">LunaCode Guide</a> ·
+  <a href="./docs/README.md">All Docs</a> ·
+  <a href="https://github.com/pingdotgg/t3code">Upstream T3 Code</a>
 </p>
 
-<p align="center">
-  <a href="https://t3.codes">
-    <img src="./.github/readme/hero.webp" width="100%" alt="T3 Code on desktop with a finished Claude thread, next to the phone app asking to approve a command from Codex" />
-  </a>
-</p>
+> **Fork Notice:** **LunaCode** ([`nidao003/lunacode`](https://github.com/nidao003/lunacode)) is an independent open-source fork of [**T3 Code**](https://github.com/pingdotgg/t3code) by T3 Tools Inc. (MIT License). `main` mirrors `upstream/main` automatically; all LunaCode customizations live on the [`lunacode`](https://github.com/nidao003/lunacode/tree/lunacode) branch while preserving bidirectional compatibility with `~/.t3/userdata`.
 
-T3 Code runs the coding agents on your machine and gives them one fast interface. Start a thread at your desk, then approve the next step from your phone.
+LunaCode runs the coding agents already installed on your machine and gives them one fast, remote-ready interface across **Desktop**, **Web**, and **Mobile (iOS & Android)**. It works with Claude Code, Codex, Cursor, OpenCode, Grok Build, Antigravity, Kiro, Pi, Muse Code, fx, Kimi Code, and any [ACP](./docs/user/providers-acp.md) agent—using your own subscriptions and API credentials.
 
-It works with Claude Code, Codex, Cursor, OpenCode, Grok Build, Antigravity, Kiro, Pi, Muse Code, fx, and any [ACP](./docs/user/providers-acp.md) agent. If an agent is set up on your computer, T3 Code can control it.
+---
 
-## What you get
+## Inherited from Upstream T3 Code
 
-- **Your subscriptions.** T3 Code does not resell tokens. It drives the agents you are already signed in to.
-- **Every agent in one place.** Change models in the middle of a thread. Let Claude hand a task to Codex.
-- **Desktop, web, and phone.** One server, and every client shows the same threads. There are apps for iOS and Android.
-- **Remote ready.** Run agents on any machine. Connect over your local network, Tailscale, or [T3 Connect](./docs/user/remote-access.md).
-- **Git built in.** Each thread can work in its own worktree. Review the diff, then commit, push, and open a pull request with one button.
-- **Fast.** Performance is a feature here. We measure it, and we treat a dropped frame as a bug.
-- **Open.** MIT licensed. If you don't like something, fork it.
+LunaCode builds directly on upstream T3 Code's core architecture and feature set:
 
-## Install
+- **Bring your own subscriptions.** Drives the provider CLIs and SDKs you are already signed in to; never resells tokens.
+- **Every agent in one control plane.** Switch models mid-thread or coordinate work across Claude, Codex, Antigravity, Cursor, OpenCode, Grok, Kiro, Pi, Muse Code, fx, and ACP registry agents.
+- **Desktop, web, and phone.** One Node/Effect WebSocket server powers Electron desktop, browser web UI, and React Native iOS/Android clients.
+- **Remote ready.** Connect over LAN, Tailscale HTTPS, SSH, or Cloudflare tunnels, with per-thread Git worktrees, diff review, PR workflows, and built-in browser/device previews.
 
-### Desktop app
+---
 
-[Download T3 Code](https://t3.codes/download) for macOS, Windows, or Linux. You can also use a package manager:
+## What's New in LunaCode (vs. Upstream T3 Code)
 
-| Platform       | Command                                                              |
-| -------------- | -------------------------------------------------------------------- |
-| macOS          | `brew install --cask t3-code`                                        |
-| Windows        | `winget install T3Tools.T3Code` or `scoop install extras/t3code`     |
-| Arch Linux     | `yay -S t3code-bin`                                                  |
-| Nix            | `nix profile add github:NixOS/nixpkgs/nixos-unstable#t3code`         |
-| Debian, Ubuntu | `.deb` from [Releases](https://github.com/pingdotgg/t3code/releases) |
+All custom capabilities are tracked in the [Customizations Ledger](./AGENTS.fork.md#5-二开定制清单customizations-ledger) (`LUNA-001`–`LUNA-013`) and documented in detail in the [LunaCode Guide](./docs/lunacode.md).
 
-### Command line
+### 1. Independent Identity, Chang'e Artwork & Safe Coexistence (`LUNA-001`, `LUNA-002`)
 
-This installs the `t3` command. Run `t3` to start the server and open the web app.
+- **Dedicated branding & bundle IDs:** Ships as **LunaCode** (`com.nidao003.lunacode` on Desktop, `com.nidao003.lunacode.mobile` on iOS/Android) with custom moon/Chang'e icon assets across macOS, Windows, Linux, Web, iOS, and Android (`assets/lunacode/`).
+- **Side-by-side coexistence with official T3 Code:** Uses an isolated Electron `userData` directory (`lunacode-v2`), disables the upstream auto-updater (`app-update.yml` omitted), and supports local macOS `Apple Development` signing via `.claude/skills/lunacode-mac-dmg/scripts/build-signed-dmg.sh`.
+- **Shared data & dual-launch guard:** Continues sharing `~/.t3/userdata` safely with official `T3 Code (Beta).app`, detects when the official app holds the home lock, and offers a one-click guided handoff to quit it cleanly before taking over.
+
+### 2. Privacy by Default: Telemetry & Crash Reporting Off (`LUNA-012`)
+
+- **Server analytics off by default:** Upstream PostHog product analytics (`ingest.t3.codes`) defaults to disabled (`T3CODE_TELEMETRY_ENABLED=false`) and only runs if you explicitly opt in with `T3CODE_TELEMETRY_ENABLED=true`.
+- **Mobile crash reporting & tracing disabled:** `expo-observe` relay crash reporting is permanently disabled on mobile, and upstream Axiom OTLP tracing is disabled unless you explicitly configure your own `EXPO_PUBLIC_OTLP_TRACES_TOKEN`.
+
+### 3. Local Context Telemetry, Cache Inspector & Turn Speed — Web & Mobile (`LUNA-003`, `LUNA-004`)
+
+- **Zero-extra-token footer bar:** Real-time context window usage bar, warning threshold marker, prompt cache hit rate, cache TTL countdown, and per-turn output speed badge (`tok/s`) rendered purely from existing local usage data across Desktop, Web, iOS, and Android.
+- **Context & Cache Inspector:** Interactive modal/dialog breaking down capacity, threshold settings, cache attribution, API-equivalent cost estimate, per-turn latency/speed, and context composition, backed by shared logic in `packages/client-runtime/src/lunacode/`.
+
+### 4. Compliant Compaction & Deterministic Handoff — Web & Mobile (`LUNA-005`)
+
+- **Optional structured `/compact` templates:** Off by default to avoid altering upstream compaction behavior unless explicitly enabled by the user.
+- **Deterministic structured handoff:** One-click "compact & continue in a new thread" workflow that generates a deterministic summary draft into a fresh thread without extra LLM calls or traffic interception.
+
+### 5. Multi-Account Setup & Per-Account Quota Breakdown — Web & Mobile (`LUNA-006`, `LUNA-009`)
+
+- **Guided isolated accounts (manual switch only):** Setup helper for isolated provider configuration directories (Claude, Antigravity, etc.) with **no automatic account rotation**.
+- **Per-account quota cards & tier badges:** Splits pooled limits into per-account cards with upstream subscription tier badges, remaining quota pills, and sibling-account comparisons inside the model picker and thread sidebar on both Web/Desktop and Mobile.
+- **Kimi Code quota integration:** Compliant credential/quota reader (`~/.kimi-code/credentials/kimi-code.json`, `/me`, `/usages`) with POSIX file-lock coordination, Windows read-only protection, a 5-minute in-memory TTL cache, and `turn.agent_busy` single-turn steering/retry protection.
+
+### 6. OpenViking Cloud Memory Light Integration — Web & Mobile (`LUNA-008`)
+
+- **Explicit on-demand recall & save:** Connect a self-hosted OpenViking memory endpoint from Settings, search/recall memories manually, or save thread takeaways in one click.
+- **Prefix-cache friendly injection:** Retrieved memory snippets are capped and appended to the end of the current user message only when explicitly triggered—never injected into the System Prompt header or fetched silently in the background.
+
+### 7. LAN `.local` mDNS Discovery & Custom Domain Pairing (`LUNA-010`)
+
+- **Automatic `.local` hostname broadcast:** When **Network access** is enabled on macOS Desktop, LunaCode automatically discovers and advertises the machine's mDNS address (`http://<hostname>.local:<port>/`).
+- **Instant link & QR switching:** Switch default pairing URLs and QR codes between LAN IP, `.local` hostname, and any custom LAN domain without restarting the server.
+
+### 8. Terminal Output Noise Reduction (`rtk` Integration) (`LUNA-007`)
+
+- **Opt-in desktop helper:** Detects local [`rtk`](https://github.com/rtk-ai/rtk) installations and Claude Code hooks in **Settings**, guiding manual setup without silently rewriting tool output or truncating errors.
+
+### 9. Official Subscription Compliance & Antigravity Hardening (`LUNA-011`, `LUNA-013`)
+
+- **Strict ToS compliance:** Runs every provider solely through its official CLI/ACP runtime—no OAuth credential/Keyring extraction, no hardcoded Google client secrets, no forged IDE client identities or User-Agents, no private undocumented quota endpoints (`v1internal`, `/api/oauth/usage`), and no hidden background `TextGeneration` helper turns on personal subscriptions.
+- **Manual-only Antigravity quota refresh & offline cache:** Refreshes Antigravity limits only on explicit user click via `agy --print /usage --output-format json` with a 5-minute cooldown and persisted per-instance offline cache.
+- **Antigravity media poisoning protection & session recovery:** Pre-validates image/audio attachments before prompting (rejecting 0-byte files, corrupted headers, and non-standard Apple `CgBI` PNGs extracted from iOS `.app` bundles), skips trailing `SYSTEM_MESSAGE` (`step_type=101`) steps in session logs so error steps aren't masked during `/compact`, and marks `INVALID_MEDIA_INPUT` errors as `broken` so the next turn automatically recovers into a fresh Antigravity session.
+
+---
+
+## Design Principles & Guardrails
+
+1. **Official Subscription Compliance:** No traffic MITM, no private credential scraping, no client spoofing, no background keep-alive probes, and no automatic multi-account rotation pools.
+2. **Zero Hidden Token Spend:** Context telemetry, cache stats, cost estimation, and handoff assembly are 100% local deterministic computations; memory recall and compaction are user-triggered only.
+3. **Zero Reasoning / Context Degradation:** System Prompts, reasoning effort levels, tool definitions, and error stack traces are never silently altered or truncated.
+4. **Upstream Data Compatibility:** Preserves `~/.t3/userdata/statev2.sqlite` schemas so you can switch freely between official T3 Code and LunaCode at any time.
+
+---
+
+## Build & Install from Source
+
+> **Branch model:** Always work from `lunacode` (never develop or commit on `main`, which tracks `upstream/main`). See [`AGENTS.fork.md`](./AGENTS.fork.md) for the fork workflow and upstream merge SOP.
 
 ```bash
-curl -fsSL https://t3.codes/install.sh | sh
+git clone -b lunacode https://github.com/nidao003/lunacode.git
+cd lunacode
+vp i
 ```
 
-On Windows, in PowerShell:
+### Run Desktop & Web in Development
 
-```powershell
-irm https://t3.codes/install.ps1 | iex
+```bash
+vp run dev
 ```
 
-To try it once without an install, run `npx t3@latest`.
+### Build Locally Signed macOS Desktop DMG (`arm64`)
 
-### Phone
+```bash
+bash .claude/skills/lunacode-mac-dmg/scripts/build-signed-dmg.sh
+```
 
-Get the app from the [App Store](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824) or [Google Play](https://play.google.com/store/apps/details?id=com.t3tools.t3code). Then follow [remote access](./docs/user/remote-access.md) to connect it to your computer.
+This outputs `release/LunaCode-<version>-arm64.dmg` signed with your local Xcode `Apple Development` identity (or pass `--unsigned` for an unsigned build).
 
-### Sign in to an agent
+### Build Mobile (iOS & Android)
 
-T3 Code needs one agent that is installed and signed in. For example, install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`, or install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`.
+See [`apps/mobile/README.md`](./apps/mobile/README.md) and the [development runbook](./docs/operations/development.md) for Expo native builds, device installation, and local testing.
 
-[Provider setup](./docs/user/install.md#providers) has the steps for each agent. [Install T3 Code](./docs/user/install.md) covers nightly builds, AppImage, WSL, and NixOS.
-
-## "Wait, what are you selling me?"
-
-Nothing. We built T3 Code because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
-
-We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the tool that you want.
+---
 
 ## Documentation
 
-- [Install and first run](./docs/user/install.md)
-- [Remote access from a phone or another machine](./docs/user/remote-access.md)
-- [Permission modes](./docs/user/permission-modes.md)
-- [Source control](./docs/user/source-control.md)
-- [Connect outside agents over MCP](./docs/user/outside-agents.md)
+- [LunaCode Features & Fork Guide](./docs/lunacode.md)
+- [Fork Workflow, Compliance Guardrails & Customizations Ledger (`AGENTS.fork.md`)](./AGENTS.fork.md)
+- [Install and First Run](./docs/user/install.md)
+- [Remote Access & LAN Pairing](./docs/user/remote-access.md)
+- [Usage and Limits](./docs/user/usage.md)
+- [Product Usage Data & Privacy](./docs/user/telemetry.md)
+- [Updating](./docs/user/updating.md)
 - [FAQ](./docs/user/faq.md)
+- [All Docs Index](./docs/README.md)
 
-[All docs](./docs/README.md) has the full list.
+---
 
-## Contributing
+## Upstream Attribution & License
 
-We have limited review capacity. Small, focused fixes are the most likely to be merged. Features need an approved discussion first.
+LunaCode is forked from [**T3 Code (`pingdotgg/t3code`)**](https://github.com/pingdotgg/t3code), created by Theo Browne, Julius Marminge, and T3 Tools Inc.
 
-- Read [CONTRIBUTING.md](./CONTRIBUTING.md) before you report a bug or open a pull request.
-- Put feature requests in [Ideas](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
-- Build from source with the [development runbook](./docs/operations/development.md#first-checkout). The [architecture overview](./docs/internals/overview.md) explains how it works.
-- Get help in [Discord](https://discord.gg/jn4EGJjrvv).
-
-## License
-
-[MIT](./LICENSE)
+Licensed under the [MIT License](./LICENSE).

@@ -1,5 +1,7 @@
 # Product usage data
 
+> **LunaCode note:** In **LunaCode** (this fork of T3 Code), server product telemetry is **disabled by default** (`T3CODE_TELEMETRY_ENABLED=false`; set `T3CODE_TELEMETRY_ENABLED=true` to opt in), mobile `expo-observe` crash reporting is permanently disabled, and default upstream Axiom OTLP tracing is disabled unless you explicitly configure your own `EXPO_PUBLIC_OTLP_TRACES_TOKEN`. See [LunaCode features & fork guide](../lunacode.md) for details. The upstream behavior documented below applies only if you explicitly re-enable telemetry or OTLP export.
+
 The T3 Code server sends product usage events to T3 Code's own endpoint at `ingest.t3.codes`,
 associated with a hashed account or installation identifier. To count how many installations one person
 uses, the server also sends hashed account identifiers: your T3 Connect account, your OpenAI and

@@ -1,6 +1,9 @@
 # T3 Code Mobile
 
 > [!NOTE]
+> **LunaCode Fork:** On the `lunacode` branch, this app builds as **LunaCode** (`com.nidao003.lunacode.mobile`) with Chang'e moon-themed icons, `expo-observe` crash reporting disabled, Axiom tracing off by default, and synced context telemetry, memory, and multi-account quota views. See [LunaCode features & fork guide](../../docs/lunacode.md).
+
+> [!NOTE]
 > To install the released app from the App Store or Google Play, see [Mobile app](../../docs/user/install.md#mobile-app). This guide covers building it from source.
 
 ## Quickstart

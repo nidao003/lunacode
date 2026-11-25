@@ -1,5 +1,7 @@
 # Updating T3 Code
 
+> **LunaCode note:** Packaged **LunaCode** desktop builds omit `app-update.yml` and disable upstream T3 Code's automatic update checks so they never overwrite your local build or collide with `T3 Code (Beta).app`. Update LunaCode by pulling the `lunacode` branch and rebuilding (see [LunaCode features & fork guide](../lunacode.md#5-building-locally)). The upstream auto-update flow described below applies to official T3 Code releases and CLI/server setups.
+
 The app you use and the server running your agents can be on different machines.
 When a server is behind your web or desktop app, the update button at the bottom
 of the sidebar and **Settings → Environments** offer to update it.
