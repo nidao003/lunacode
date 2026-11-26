@@ -39,6 +39,7 @@ import {
   FileDiffIcon,
   GitBranchPlusIcon,
   GitCommitIcon,
+  HistoryIcon,
   InfoIcon,
   LockIcon,
   GlobeIcon,
@@ -157,6 +158,7 @@ interface GitActionsViewProps {
   showActions?: boolean;
   showChanges?: boolean;
   onOpenChanges?: () => void;
+  onOpenHistory?: () => void;
   workspaceMutationId?: string | null;
 }
 
@@ -1011,6 +1013,7 @@ function CheckoutGitActionsControl({
   showActions = true,
   showChanges = true,
   onOpenChanges,
+  onOpenHistory,
   workspaceMutationId = null,
 }: GitActionsControlProps) {
   const gt = useGT();
@@ -1455,7 +1458,11 @@ function CheckoutGitActionsControl({
     menuItems: gitActionMenuItems,
     canWriteSourceControl,
     canPublishRepository,
-    hasNotice: isDetachedHead || isCleanAndBehind || Boolean(gitStatusError),
+    hasNotice:
+      isDetachedHead ||
+      isCleanAndBehind ||
+      Boolean(gitStatusError) ||
+      (isRepo && Boolean(onOpenHistory)),
   });
 
   // A disabled menu cannot refresh on open, and terminal edits or commits publish no status.
@@ -1534,6 +1541,14 @@ function CheckoutGitActionsControl({
           <CloudUploadIcon />
           <MenuItemLabel>
             <T>Publish repository...</T>
+          </MenuItemLabel>
+        </MenuItem>
+      ) : null}
+      {isRepo && onOpenHistory ? (
+        <MenuItem onClick={onOpenHistory}>
+          <HistoryIcon />
+          <MenuItemLabel>
+            <T>Repository history</T>
           </MenuItemLabel>
         </MenuItem>
       ) : null}

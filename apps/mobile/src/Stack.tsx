@@ -67,6 +67,7 @@ import { GitBranchesSheet } from "./features/threads/git/GitBranchesSheet";
 import { GitCommitSheet } from "./features/threads/git/GitCommitSheet";
 import { GitConfirmSheet } from "./features/threads/git/GitConfirmSheet";
 import { GitOverviewSheet } from "./features/threads/git/GitOverviewSheet";
+import { LunaMobileGitHistorySheet } from "./lunacode/LunaMobileGitHistorySheet";
 import { ThreadPullRequestsSheet } from "./features/threads/ThreadPullRequestsSheet";
 import { ThreadAgentsSheet } from "./features/threads/ThreadAgentsSheet";
 import { LinkedThreadSheet } from "./features/threads/LinkedThreadSheet";
@@ -836,6 +837,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: GitBranchesSheet,
       linking: `${THREAD_LINKING_PREFIX}/git/branches`,
       options: sheetRoute({ detent: 0.55, androidFit: true }),
+    }),
+    GitHistory: createNativeStackScreen({
+      screen: LunaMobileGitHistorySheet,
+      linking: `${THREAD_LINKING_PREFIX}/git/history`,
+      options: sheetRoute({ detent: 0.85, androidFit: true }),
     }),
     GitConfirm: createNativeStackScreen({
       screen: GitConfirmSheet,

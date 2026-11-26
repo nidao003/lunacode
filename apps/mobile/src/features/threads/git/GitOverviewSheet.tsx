@@ -399,7 +399,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
         />
       ) : null}
 
-      {repository === undefined || isPinnedRepository ? (
+      {repository === undefined || isPinnedRepository || isRepo ? (
         <ListSection>
           {repository === undefined ? (
             <>
@@ -441,22 +441,40 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
                   )
                 }
               />
-              {linkedPrActions.canLink ? (
-                <ListRow
-                  icon="link"
-                  label={gt(
-                    "{term, select, mr {Link merge request} cr {Link change request} other {Link pull request}}",
-                    { term: changeRequestTermKind(linkedPrActions.terminology) },
-                  )}
-                  description={gt(
-                    "{term, select, mr {Attach a merge request by URL or number} cr {Attach a change request by URL or number} other {Attach a pull request by URL or number}}",
-                    { term: changeRequestTermKind(linkedPrActions.terminology) },
-                  )}
-                  onPress={linkedPrActions.promptLink}
-                />
-              ) : null}
             </>
-          ) : isPinnedRepository ? (
+          ) : null}
+          {isRepo ? (
+            <ListRow
+              icon="git.commit"
+              label={gt("Repository history")}
+              description={gt("Browse all branches, tags, and commit details")}
+              disabled={busy || selectedThreadCwd === null}
+              onPress={() =>
+                presentRoute(() =>
+                  navigation.navigate("GitHistory", {
+                    environmentId: String(environmentId),
+                    threadId: String(threadId),
+                    ...repositoryParams,
+                  }),
+                )
+              }
+            />
+          ) : null}
+          {repository === undefined && linkedPrActions.canLink ? (
+            <ListRow
+              icon="link"
+              label={gt(
+                "{term, select, mr {Link merge request} cr {Link change request} other {Link pull request}}",
+                { term: changeRequestTermKind(linkedPrActions.terminology) },
+              )}
+              description={gt(
+                "{term, select, mr {Attach a merge request by URL or number} cr {Attach a change request by URL or number} other {Attach a pull request by URL or number}}",
+                { term: changeRequestTermKind(linkedPrActions.terminology) },
+              )}
+              onPress={linkedPrActions.promptLink}
+            />
+          ) : null}
+          {isPinnedRepository ? (
             <ListRow
               icon="pin.slash"
               label={gt("Remove from this thread")}

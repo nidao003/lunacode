@@ -152,6 +152,13 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     addDiffSurface();
   };
   const openChangesFromThreadPanelStable = useStableCallback(openChangesFromThreadPanel);
+  const openHistoryFromThreadPanel = () => {
+    if (!activeThreadRef || !isServerThread || !diffAvailable) return;
+    useDiffPanelStore.getState().selectGitScope(activeThreadRef, "history");
+    useRightPanelStore.getState().open(activeThreadRef, "diff");
+    onDiffPanelOpen?.();
+  };
+  const openHistoryFromThreadPanelStable = useStableCallback(openHistoryFromThreadPanel);
   const addFilesSurface = () => {
     if (!activeThreadRef || !activeProject) return;
     useRightPanelStore.getState().open(activeThreadRef, "files");
@@ -354,6 +361,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     onOpenToolDiffStable,
     onToggleDiffStable,
     openChangesFromThreadPanelStable,
+    openHistoryFromThreadPanelStable,
     openFileSurfaceStable,
     toggleRightPanelMaximizedStable,
     toggleRightPanelStable,

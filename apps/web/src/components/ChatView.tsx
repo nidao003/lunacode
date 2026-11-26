@@ -2561,6 +2561,7 @@ export default function ChatView(props: ChatViewProps) {
     moveRightPanelSurfaceStable,
     onOpenToolDiffStable,
     openChangesFromThreadPanelStable,
+    openHistoryFromThreadPanelStable,
     openFileSurfaceStable,
     toggleRightPanelMaximizedStable,
     toggleRightPanelStable,
@@ -4230,7 +4231,10 @@ export default function ChatView(props: ChatViewProps) {
                     : {})}
                   onComposerFocusRequest={scheduleComposerFocusStable}
                   {...(isServerThread && isGitRepo
-                    ? { onOpenChanges: openChangesFromThreadPanelStable }
+                    ? {
+                        onOpenChanges: openChangesFromThreadPanelStable,
+                        onOpenHistory: openHistoryFromThreadPanelStable,
+                      }
                     : {})}
                   onRunProjectScript={runProjectScriptStable}
                   onAddProjectScript={saveProjectScriptStable}

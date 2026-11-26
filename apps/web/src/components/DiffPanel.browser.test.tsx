@@ -12,8 +12,11 @@ import {
   type ClientSettings,
   type OrchestrationGetTurnDiffResult,
   type ReviewBranchCommitsResult,
+  type ReviewCommitDetailsResult,
+  ReviewCommitSha,
   type ReviewDiffPreviewResult,
   type ReviewDiffPreviewSource,
+  type ReviewRepositoryHistoryResult,
   type ScopedThreadRef,
   type VcsListRefsResult,
   type VcsStatusResult,
@@ -45,6 +48,8 @@ const state = vi.hoisted(() => ({
   localRefs: null as unknown as ResultAtom<VcsListRefsResult>,
   remoteRefs: null as unknown as ResultAtom<VcsListRefsResult>,
   commits: null as unknown as ResultAtom<ReviewBranchCommitsResult>,
+  repositoryHistory: null as unknown as ResultAtom<ReviewRepositoryHistoryResult>,
+  commitDetails: null as unknown as ResultAtom<ReviewCommitDetailsResult>,
   checkpoints: [] as unknown[],
   checkpointDiff: null as Partial<OrchestrationGetTurnDiffResult> | null,
 }));
@@ -57,6 +62,8 @@ vi.mock("~/state/review", () => ({
     diffPreview: ({ input }: { input: { baseRef?: string } }) =>
       state.previews.get(input.baseRef ?? null)!,
     branchCommits: () => state.commits,
+    repositoryHistory: () => state.repositoryHistory,
+    commitDetails: () => state.commitDetails,
     diffFilePatch: () => state.patch,
     diffFileContents: {},
   },
@@ -201,6 +208,44 @@ function setup(failedBaseRef: string | null) {
   state.localRefs = Atom.make(AsyncResult.success(refs(["dev", "main"], false)));
   state.remoteRefs = Atom.make(AsyncResult.success(refs(["origin/orphan"], true)));
   state.commits = Atom.make(AsyncResult.success({ commits: [], truncated: false }));
+  const sampleSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as ReviewCommitSha;
+  state.repositoryHistory = Atom.make(
+    AsyncResult.success({
+      commits: [
+        {
+          sha: sampleSha,
+          parentShas: [],
+          subject: "feat: add repository history browser",
+          authorName: "Alice",
+          authorEmail: "alice@example.com",
+          authoredAt: "2026-11-26T00:00:00Z",
+          committedAt: "2026-11-26T00:00:00Z",
+          refs: ["dev"],
+        },
+      ],
+      nextCursor: null,
+      truncated: false,
+    }),
+  );
+  state.commitDetails = Atom.make(
+    AsyncResult.success({
+      sha: sampleSha,
+      parentShas: [],
+      subject: "feat: add repository history browser",
+      authorName: "Alice",
+      authorEmail: "alice@example.com",
+      committerName: "Alice",
+      committerEmail: "alice@example.com",
+      authoredAt: "2026-11-26T00:00:00Z",
+      committedAt: "2026-11-26T00:00:00Z",
+      refs: ["dev"],
+      body: "",
+      files: [],
+      insertions: 0,
+      deletions: 0,
+      truncated: false,
+    }),
+  );
   useDiffPanelStore.getState().selectBranchBaseRef(state.threadRef, failedBaseRef);
   const registry = AtomRegistry.make();
   return {
@@ -525,5 +570,38 @@ it("opens a file from a tool call's diff by the path its agent recorded", async 
     expect(
       selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, context.threadRef),
     ).toMatchObject({ activeSurfaceId: "file:src/a.ts" }),
+  );
+});
+
+it("switches to repository history scope and opens a selected commit diff", async () => {
+  using context = setup("origin/orphan");
+  await using screen = await render(
+    <RegistryContext.Provider value={context.registry}>
+      <div className="flex h-[600px] flex-col">
+        <DiffPanel composerDraftTarget={context.threadRef} workspaceMutationId={null} visible />
+      </div>
+    </RegistryContext.Provider>,
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: /^Diff scope:/ }));
+  await userEvent.click(screen.getByRole("menuitemradio", { name: "Repository history" }));
+  await expect
+    .element(screen.getByText("feat: add repository history browser"))
+    .toBeInTheDocument();
+
+  await userEvent.click(
+    screen.getByRole("button", { name: /feat: add repository history browser/ }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "查看提交 Diff" }));
+
+  await vi.waitFor(() =>
+    expect(
+      useDiffPanelStore.getState().byThreadKey[
+        `${context.threadRef.environmentId}:${context.threadRef.threadId}`
+      ],
+    ).toMatchObject({
+      kind: "commit",
+      sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    }),
   );
 });

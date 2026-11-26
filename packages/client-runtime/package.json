@@ -695,6 +695,10 @@
       "types": "./src/lunacode/brandDisplay.ts",
       "default": "./src/lunacode/brandDisplay.ts"
     },
+    "./lunacode/repository-history": {
+      "types": "./src/lunacode/repositoryHistory.logic.ts",
+      "default": "./src/lunacode/repositoryHistory.logic.ts"
+    },
     "./pull-request-references": {
       "types": "./src/pullRequestReferences.ts",
       "default": "./src/pullRequestReferences.ts"
