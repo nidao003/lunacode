@@ -9,6 +9,7 @@ import {
 import { providerClients } from "@t3tools/client-runtime/provider-clients";
 import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
 import {
+  collectHttpQuotaSources,
   collectLimitAccounts,
   collectLimitPools,
   displayLimitWindows,
@@ -25,6 +26,7 @@ import {
 import { msg, T, useGT, useMessages, Var } from "gt-react-native";
 import { Fragment, type ReactNode, useId, useState } from "react";
 import { Pressable, View } from "react-native";
+import { useNowMinuteMs } from "../../lib/clock";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { Defs, Path, Pattern, Rect, Svg } from "react-native-svg";
@@ -199,14 +201,13 @@ function PoolWindowCard({
   const inlineLabels = wide && segmentWidth >= 96;
   const inlineReset = wide && segmentWidth >= 150;
   const inlineName = wide && segmentWidth >= 220;
-  const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
+  const nextRefill = pool.resets.find((reset) => reset.at > now && reset.restoresPercent > 0);
   const openAccount = (account: LimitAccount) =>
     navigation.navigate("SettingsUsageAccount", {
       accountKey: account.key,
       windowId: pool.id,
       windowKind: pool.kind,
       environmentIds,
-      now,
     });
   const summary = (
     <>
@@ -216,7 +217,7 @@ function PoolWindowCard({
             <Text className="text-sm font-t3-medium text-foreground">{label ?? pool.label}</Text>
           ) : null}
           <View className="flex-row items-baseline gap-1.5">
-            <Text className="text-sm text-foreground-muted">
+            <Text className="text-sm leading-(--text-3xl--line-height) text-foreground-muted">
               <T>
                 <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
                   <Var>{pool.remainingPercent}</Var>%
@@ -488,6 +489,7 @@ export function UsageLimitsSection({
       : new Map([...presentations].filter(([id]) => selectedEnvironmentIds.has(id)));
   const accounts = collectLimitAccounts(selected);
   const pools = collectLimitPools(accounts, now);
+  const quotaSources = collectHttpQuotaSources(selected);
   const m = useMessages();
   const notices = collectLimitNotices(selected, m);
   const externalLinks = collectExternalUsageLinks(selected, m);
@@ -512,13 +514,36 @@ export function UsageLimitsSection({
       {pools.length === 0 &&
       notices.length === 0 &&
       failedLabels.length === 0 &&
-      externalLinks.length === 0 ? (
+      externalLinks.length === 0 &&
+      quotaSources.length === 0 ? (
         <Text className="py-12 text-center text-base text-foreground-muted">
           {selected.size === 0
             ? gt("Select an environment to see limits.")
             : gt("No provider on the selected environments reports subscription limits.")}
         </Text>
       ) : null}
+      {quotaSources.map((source) => (
+        <View key={source.key} className="gap-3 rounded-[24px] bg-grouped-card p-4">
+          <Text className="text-base font-t3-medium text-foreground">{source.label}</Text>
+          {source.quotaAccounts?.map((account) => (
+            <View key={account.id} className="gap-1">
+              <Text className="text-sm font-t3-medium text-foreground">{account.label}</Text>
+              {account.windows.map((window) => {
+                const reset = resetLabels(window, now, m);
+                return (
+                  <View key={window.id} className="flex-row justify-between gap-3">
+                    <Text className="shrink text-sm text-foreground-muted">{window.label}</Text>
+                    <Text className="text-sm text-foreground-muted">
+                      {gt("{remaining}% left", { remaining: remainingPercent(window) })}
+                      {reset ? ` · ${reset.compact}` : ""}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          ))}
+        </View>
+      ))}
       {pools.length > 0 && viewMode === "accounts" ? (
         <LunaMobileUsageLimitsView
           pools={pools}
@@ -618,13 +643,13 @@ type AccountScreenProps = StaticScreenProps<{
   windowId: string;
   windowKind: LimitPoolWindow["kind"];
   environmentIds: readonly string[] | null;
-  now: number;
 }>;
 
 export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
   const insets = useSafeAreaInsets();
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
-  const { accountKey, windowId, windowKind, environmentIds, now } = route.params;
+  const { accountKey, windowId, windowKind, environmentIds } = route.params;
+  const now = useNowMinuteMs();
   const selectedIds =
     environmentIds === null ? null : new Set(environmentIds.map((id) => EnvironmentId.make(id)));
   const selected =

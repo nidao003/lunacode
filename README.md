@@ -34,7 +34,7 @@ LunaCode builds directly on upstream T3 Code's core architecture and feature set
 
 ## What's New in LunaCode (vs. Upstream T3 Code)
 
-All custom capabilities are tracked in the [Customizations Ledger](./AGENTS.fork.md#5-二开定制清单customizations-ledger) (`LUNA-001`–`LUNA-013`) and documented in detail in the [LunaCode Guide](./docs/lunacode.md).
+All custom capabilities are tracked in the [Customizations Ledger](./AGENTS.fork.md#5-二开定制清单customizations-ledger) (`LUNA-001`–`LUNA-015`) and documented in detail in the [LunaCode Guide](./docs/lunacode.md).
 
 ### 1. Independent Identity, Chang'e Artwork & Safe Coexistence (`LUNA-001`, `LUNA-002`)
 
@@ -120,7 +120,7 @@ This outputs `release/LunaCode-<version>-arm64.dmg` signed with your local Xcode
 
 ### Build Mobile (iOS & Android)
 
-See [`apps/mobile/README.md`](./apps/mobile/README.md) and the [development runbook](./docs/operations/development.md) for Expo native builds, device installation, and local testing.
+See [`apps/mobile/README.md`](./apps/mobile/README.md) and the [development runbook](./docs/operations/00_development.md) for Expo native builds, device installation, and local testing.
 
 ---
 
@@ -143,3 +143,9 @@ See [`apps/mobile/README.md`](./apps/mobile/README.md) and the [development runb
 LunaCode is forked from [**T3 Code (`pingdotgg/t3code`)**](https://github.com/pingdotgg/t3code), created by Theo Browne, Julius Marminge, and T3 Tools Inc.
 
 Licensed under the [MIT License](./LICENSE).
+
+## Trademarks and forks
+
+The MIT license applies **only to the source code**. It does not grant any rights to T3 Tools, Inc.'s trademarks, branding, or trade dress, including the **T3 Code** name, wordmark, logos, and application icons.
+
+LunaCode is an independent, unofficial fork. Do not use the T3 Code name, wordmark, logos, or application icons in a way that suggests official status or affiliation. See [TRADEMARK.md](./TRADEMARK.md) for the full trademark and branding policy.

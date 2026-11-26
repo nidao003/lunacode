@@ -88,4 +88,4 @@ vp run dev
 bash .claude/skills/lunacode-mac-dmg/scripts/build-signed-dmg.sh
 ```
 
-For mobile builds (iOS & Android), see [`apps/mobile/README.md`](../apps/mobile/README.md) and [`docs/operations/development.md`](./operations/development.md).
+For mobile builds (iOS & Android), see [`apps/mobile/README.md`](../apps/mobile/README.md) and [`docs/operations/00_development.md`](./operations/00_development.md).

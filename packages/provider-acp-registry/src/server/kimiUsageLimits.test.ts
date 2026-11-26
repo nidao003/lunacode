@@ -378,7 +378,11 @@ it.live("adopts a credential another process rotated when the refresh answers 40
             ),
           ),
         );
-      }),
+      }).pipe(
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(Path.Path, path),
+        Effect.orDie,
+      ),
     );
     const probe = yield* readKimiUsageLimits({ configuredHome: home }).pipe(
       Effect.provideService(HostProcess.Platform, "linux"),

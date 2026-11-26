@@ -264,7 +264,6 @@ function AccountQuotaCard(props: {
           windowId: firstWindow.id,
           windowKind: firstWindow.kind,
           environmentIds: props.environmentIds,
-          now: props.now,
         })
     : undefined;
 

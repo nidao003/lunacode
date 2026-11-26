@@ -1,21 +1,41 @@
 import * as Schema from "effect/Schema";
-import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { GitRefName, NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { GitCommandError } from "./git.ts";
 import { VcsError } from "./vcs.ts";
 
+// An object id or HEAD, never an option-looking ref, since it is passed to git as a revision.
+const ReviewMergeBase = Schema.String.check(
+  Schema.isPattern(/^(?:[0-9a-f]{40}|[0-9a-f]{64}|HEAD)$/),
+);
+
+export const ReviewDiffChangeType = Schema.Literals([
+  "change",
+  "rename-pure",
+  "rename-changed",
+  "new",
+  "deleted",
+]);
+export type ReviewDiffChangeType = typeof ReviewDiffChangeType.Type;
+
 export const ReviewDiffPreviewInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
-  baseRef: Schema.optional(TrimmedNonEmptyString),
+  baseRef: Schema.optional(GitRefName),
+  // A branch-range file read reuses its preview's merge base instead of resolving it again.
+  mergeBase: Schema.optionalKey(ReviewMergeBase),
   commitSha: Schema.optional(TrimmedNonEmptyString),
   ignoreWhitespace: Schema.optionalKey(Schema.Boolean),
   sourceKind: Schema.optionalKey(Schema.Literals(["working-tree", "branch-range"])),
   trackedOnly: Schema.optionalKey(Schema.Boolean),
+  /** From a trackedOnly result, so the complete read adds only the untracked files. */
+  completionToken: Schema.optionalKey(Schema.String),
   metadataOnly: Schema.optionalKey(Schema.Boolean),
   file: Schema.optionalKey(
     Schema.Struct({
       path: Schema.NonEmptyString,
       previousPath: Schema.NullOr(Schema.NonEmptyString),
       sourceKind: Schema.Literals(["working-tree", "branch-range", "commit"]),
+      // The preview's change type; the server still confirms a tracked path before relying on it.
+      changeType: Schema.optionalKey(ReviewDiffChangeType),
     }),
   ),
 });
@@ -23,7 +43,7 @@ export type ReviewDiffPreviewInput = typeof ReviewDiffPreviewInput.Type;
 
 export const ReviewBranchCommitsInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
-  baseRef: Schema.optional(TrimmedNonEmptyString),
+  baseRef: Schema.optional(GitRefName),
 });
 export type ReviewBranchCommitsInput = typeof ReviewBranchCommitsInput.Type;
 
@@ -39,21 +59,76 @@ export const ReviewBranchCommitsResult = Schema.Struct({
 });
 export type ReviewBranchCommitsResult = typeof ReviewBranchCommitsResult.Type;
 
+export const REVIEW_REPOSITORY_HISTORY_DEFAULT_LIMIT = 50;
+const REVIEW_REPOSITORY_HISTORY_MAX_LIMIT = 100;
+export const REVIEW_REPOSITORY_HISTORY_MAX_TIPS = 200;
+
+export const ReviewCommitSha = Schema.String.check(
+  Schema.isPattern(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i),
+);
+export type ReviewCommitSha = typeof ReviewCommitSha.Type;
+
+export const ReviewRepositoryRef = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  kind: Schema.Literals(["branch", "remote", "tag"]),
+  current: Schema.Boolean,
+  sha: ReviewCommitSha,
+});
+export type ReviewRepositoryRef = typeof ReviewRepositoryRef.Type;
+
+export const ReviewRepositoryHistoryCursor = Schema.Struct({
+  offset: NonNegativeInt,
+  tipShas: Schema.Array(ReviewCommitSha).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(REVIEW_REPOSITORY_HISTORY_MAX_TIPS),
+  ),
+  refs: Schema.Array(ReviewRepositoryRef).check(
+    Schema.isMaxLength(REVIEW_REPOSITORY_HISTORY_MAX_TIPS),
+  ),
+});
+export type ReviewRepositoryHistoryCursor = typeof ReviewRepositoryHistoryCursor.Type;
+
+export const ReviewRepositoryHistoryInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  scope: Schema.optionalKey(Schema.Literals(["all", "current"])),
+  limit: Schema.optionalKey(
+    PositiveInt.check(Schema.isLessThanOrEqualTo(REVIEW_REPOSITORY_HISTORY_MAX_LIMIT)),
+  ),
+  cursor: Schema.optionalKey(ReviewRepositoryHistoryCursor),
+});
+export type ReviewRepositoryHistoryInput = typeof ReviewRepositoryHistoryInput.Type;
+
+export const ReviewRepositoryHistoryCommit = Schema.Struct({
+  sha: ReviewCommitSha,
+  parentShas: Schema.Array(ReviewCommitSha),
+  subject: Schema.String,
+  authorName: Schema.String,
+  authorEmail: Schema.String,
+  authoredAt: Schema.String,
+  committedAt: Schema.String,
+  refs: Schema.Array(TrimmedNonEmptyString),
+});
+export type ReviewRepositoryHistoryCommit = typeof ReviewRepositoryHistoryCommit.Type;
+
+export const ReviewRepositoryHistoryResult = Schema.Struct({
+  commits: Schema.Array(ReviewRepositoryHistoryCommit),
+  nextCursor: Schema.NullOr(ReviewRepositoryHistoryCursor),
+  truncated: Schema.Boolean,
+});
+export type ReviewRepositoryHistoryResult = typeof ReviewRepositoryHistoryResult.Type;
+
+export const ReviewCommitDetailsInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  commitSha: ReviewCommitSha,
+});
+export type ReviewCommitDetailsInput = typeof ReviewCommitDetailsInput.Type;
+
 export const ReviewDiffPreviewSourceKind = Schema.Literals([
   "working-tree",
   "branch-range",
   "commit",
 ]);
 export type ReviewDiffPreviewSourceKind = typeof ReviewDiffPreviewSourceKind.Type;
-
-export const ReviewDiffChangeType = Schema.Literals([
-  "change",
-  "rename-pure",
-  "rename-changed",
-  "new",
-  "deleted",
-]);
-export type ReviewDiffChangeType = typeof ReviewDiffChangeType.Type;
 
 export const ReviewDiffFileStat = Schema.Struct({
   path: Schema.String,
@@ -65,13 +140,27 @@ export const ReviewDiffFileStat = Schema.Struct({
 });
 export type ReviewDiffFileStat = typeof ReviewDiffFileStat.Type;
 
+export const ReviewCommitDetailsResult = Schema.Struct({
+  ...ReviewRepositoryHistoryCommit.fields,
+  committerName: Schema.String,
+  committerEmail: Schema.String,
+  body: Schema.String,
+  files: Schema.Array(ReviewDiffFileStat),
+  insertions: NonNegativeInt,
+  deletions: NonNegativeInt,
+  truncated: Schema.Boolean,
+});
+export type ReviewCommitDetailsResult = typeof ReviewCommitDetailsResult.Type;
+
 export const ReviewDiffPreviewSource = Schema.Struct({
   id: TrimmedNonEmptyString,
   kind: ReviewDiffPreviewSourceKind,
   title: TrimmedNonEmptyString,
   commitSubject: Schema.optionalKey(TrimmedNonEmptyString),
-  baseRef: Schema.NullOr(TrimmedNonEmptyString),
-  headRef: Schema.NullOr(TrimmedNonEmptyString),
+  baseRef: Schema.NullOr(GitRefName),
+  headRef: Schema.NullOr(GitRefName),
+  // Branch-range only; older servers omit it.
+  mergeBase: Schema.optionalKey(ReviewMergeBase),
   diff: Schema.String,
   diffHash: TrimmedNonEmptyString,
   truncated: Schema.Boolean,
@@ -84,8 +173,8 @@ export const ReviewDiffFileContentsInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   sourceKind: ReviewDiffPreviewSourceKind,
   changeType: ReviewDiffChangeType,
-  baseRef: Schema.NullOr(TrimmedNonEmptyString),
-  headRef: Schema.NullOr(TrimmedNonEmptyString),
+  baseRef: Schema.NullOr(GitRefName),
+  headRef: Schema.NullOr(GitRefName),
   oldPath: Schema.NonEmptyString,
   newPath: Schema.NonEmptyString,
 });
@@ -102,6 +191,7 @@ export const ReviewDiffPreviewResult = Schema.Struct({
   generatedAt: Schema.DateTimeUtc,
   sources: Schema.Array(ReviewDiffPreviewSource),
   incomplete: Schema.optionalKey(Schema.Boolean),
+  completionToken: Schema.optionalKey(Schema.String),
 });
 export type ReviewDiffPreviewResult = typeof ReviewDiffPreviewResult.Type;
 
