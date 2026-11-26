@@ -4,6 +4,10 @@ import {
   thrownErrorMessage,
 } from "@t3tools/client-runtime/errors";
 import {
+  LUNACODE_CONNECT_NAME,
+  rebrandTextToLunaCode,
+} from "@t3tools/client-runtime/lunacode/brand-display";
+import {
   connectionErrorText,
   type ConnectionTarget,
   type EnvironmentConnectionPresentation,
@@ -382,23 +386,23 @@ export function CloudEnvironmentConnectRows({
             ? "bg-warning"
             : "bg-muted-foreground/35";
     const notAdded = savedWithoutRelay.has(environment.environmentId)
-      ? gt("Saved without T3 Connect")
+      ? rebrandTextToLunaCode(gt("Saved without T3 Connect"))
       : gt("Not added");
     const statusText =
       unsupported && !savedEnvironment
-        ? `T3 Connect · ${notAdded} · ${gt("Client not supported")}`
+        ? `${LUNACODE_CONNECT_NAME} · ${notAdded} · ${gt("Client not supported")}`
         : offlineReason !== null
           ? offlineReason
           : savedConnection
             ? savedConnection.statusText
             : availability === "online"
-              ? `T3 Connect · ${notAdded} · ${gt("Relay online")}`
+              ? `${LUNACODE_CONNECT_NAME} · ${notAdded} · ${gt("Relay online")}`
               : availability === "offline"
-                ? `T3 Connect · ${notAdded} · ${gt("Relay offline")}`
+                ? `${LUNACODE_CONNECT_NAME} · ${notAdded} · ${gt("Relay offline")}`
                 : availability === "checking"
-                  ? `T3 Connect · ${notAdded} · ${gt("Checking relay status…")}`
+                  ? `${LUNACODE_CONNECT_NAME} · ${notAdded} · ${gt("Checking relay status…")}`
                   : (errorDisplayMessage(Option.getOrNull(error), m) ??
-                    `T3 Connect · ${notAdded} · ${gt("Relay status unavailable")}`);
+                    `${LUNACODE_CONNECT_NAME} · ${notAdded} · ${gt("Relay status unavailable")}`);
     if (selection) {
       return (
         <label

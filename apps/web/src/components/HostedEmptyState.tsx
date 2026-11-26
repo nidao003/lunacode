@@ -1,5 +1,5 @@
-import { useAuth } from "@clerk/react";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { useCloudAuth } from "../lunacode/cloudAuth";
 import { Link } from "@tanstack/react-router";
 import { T } from "gt-react";
 import { CheckIcon } from "lucide-react";
@@ -68,7 +68,7 @@ export function HostedEmptyState() {
 }
 
 function T3ConnectSteps() {
-  const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  const { isLoaded, isSignedIn } = useCloudAuth({ treatPendingAsSignedOut: false });
   const loadFailed = useClerkLoadFailed();
   const { openAuthPrompt } = useT3ConnectAuthPrompt();
   // Adding the first computer unmounts this screen. Wait for all health checks

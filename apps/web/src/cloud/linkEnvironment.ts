@@ -18,6 +18,7 @@ import {
   WS_METHODS,
 } from "@t3tools/contracts";
 import {
+  isManagedTunnelProviderKind,
   type RelayEnvironmentLinkResponse,
   type RelayManagedEndpointProviderKind,
 } from "@t3tools/contracts/relay";
@@ -27,7 +28,7 @@ import { ManagedRelay, relayRequestFailureDetail } from "@t3tools/client-runtime
 import { executeConnectedEnvironmentHttpRequest } from "@t3tools/client-runtime/state/environmentHttpAuth";
 
 import { m } from "../i18n/messages";
-import { resolveCloudPublicConfig } from "./publicConfig";
+import { resolveCloudAuthMode, resolveCloudPublicConfig } from "./publicConfig";
 import {
   finishRelayClientInstall,
   reportRelayClientInstallProgress,
@@ -179,8 +180,9 @@ function endpointOrigin(httpBaseUrl: string) {
   };
 }
 
-const MANAGED_ENDPOINT_PROVIDER_KIND =
-  "cloudflare_tunnel" satisfies RelayManagedEndpointProviderKind;
+function managedEndpointProviderKind(): RelayManagedEndpointProviderKind {
+  return resolveCloudAuthMode() === "lunacode" ? "t3_relay" : "cloudflare_tunnel";
+}
 
 function ensureLinkedEnvironmentMatches(input: {
   readonly expectedEnvironmentId: string;
@@ -192,7 +194,10 @@ function ensureLinkedEnvironmentMatches(input: {
       message: m(msg("Relay returned credentials for a different environment.")),
     });
   }
-  if (input.link.endpoint.providerKind !== input.expectedProviderKind) {
+  const providerMatches = isManagedTunnelProviderKind(input.expectedProviderKind)
+    ? isManagedTunnelProviderKind(input.link.endpoint.providerKind)
+    : input.link.endpoint.providerKind === input.expectedProviderKind;
+  if (!providerMatches) {
     return new CloudEnvironmentLinkError({
       message: m(msg("Relay returned credentials for a different endpoint provider.")),
     });
@@ -403,12 +408,12 @@ export const linkEnvironmentToCloud: (input: {
   }
   const managedTunnelsEnabled = (input.mode ?? "managed") === "managed";
   const providerKind = managedTunnelsEnabled
-    ? MANAGED_ENDPOINT_PROVIDER_KIND
+    ? managedEndpointProviderKind()
     : PUBLISH_ONLY_PROVIDER_KIND;
   const relayClient = yield* ManagedRelay.ManagedRelayClient;
   // The environment only signs a proof for the loopback origin this request reaches it on.
   const endpoint = yield* preparedEndpoint(input.target);
-  if (managedTunnelsEnabled) {
+  if (providerKind === "cloudflare_tunnel") {
     yield* ensureRelayClientAvailable(input.target.environmentId);
   }
 

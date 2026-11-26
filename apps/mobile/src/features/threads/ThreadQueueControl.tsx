@@ -15,6 +15,7 @@ import type { ChatAttachment, EnvironmentId, RunId, ThreadId } from "@t3tools/co
 import { Atom } from "effect/reactivity";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
+import { rebrandTextToLunaCode } from "@t3tools/client-runtime/lunacode/brand-display";
 import { msg, T, useGT, useMessages } from "gt-react-native";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
@@ -104,7 +105,7 @@ function QueuedRunSender(props: {
             label: senderShell?.title.trim() || linkedSender?.title.trim() || gt("Agent"),
           }
         : attribution === "t3code"
-          ? { icon: null, label: gt("Sent by T3 Code") }
+          ? { icon: null, label: rebrandTextToLunaCode(gt("Sent by T3 Code")) }
           : null;
   if (sender === null) return null;
   return (

@@ -1,4 +1,4 @@
-import { useAuth, useClerk } from "@clerk/react";
+import { useClerk } from "@clerk/react";
 import { readConnectAuthorizeRequest } from "@t3tools/shared/connectAuth";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
@@ -7,7 +7,13 @@ import {
   buildConnectCliClerkAuthorizeUrl,
   connectCliSignInRedirectUrl,
 } from "../../cloud/connectCliAuth";
+import { resolveCloudAuthMode } from "../../cloud/publicConfig";
 import { isElectron } from "../../env";
+import {
+  authorizeCliWithLunaAccount,
+  openLunaAuthDialog,
+  useCloudAuth,
+} from "../../lunacode/cloudAuth";
 import { StandalonePage, StandalonePageHeader } from "../ui/standalone-page";
 import { resolveClerkSignInProps } from "../clerk/authRedirect";
 import { retryClerkLoad, useClerkLoadFailed } from "../clerk/clerkLoadFailure";
@@ -22,11 +28,46 @@ const invalidLinkMessage = {
 } as const;
 
 export function ConnectCliAuthorizeSurface() {
+  if (resolveCloudAuthMode() === "lunacode") {
+    return <LunaConnectCliAuthorizeSurface />;
+  }
+  return <ClerkConnectCliAuthorizeSurface />;
+}
+
+function LunaConnectCliAuthorizeSurface() {
+  return <ConnectCliAuthorizeBody isLunaMode onOpenSignIn={() => openLunaAuthDialog()} />;
+}
+
+function ClerkConnectCliAuthorizeSurface() {
+  const clerk = useClerk();
+  return (
+    <ConnectCliAuthorizeBody
+      isLunaMode={false}
+      onOpenSignIn={(request) =>
+        clerk.openSignIn(
+          resolveClerkSignInProps(
+            connectCliSignInRedirectUrl(request, window.location.href),
+            isElectron,
+          ),
+        )
+      }
+    />
+  );
+}
+
+function ConnectCliAuthorizeBody({
+  isLunaMode,
+  onOpenSignIn,
+}: {
+  readonly isLunaMode: boolean;
+  readonly onOpenSignIn: (
+    request: NonNullable<ReturnType<typeof readConnectAuthorizeRequest>>,
+  ) => void;
+}) {
   const [request] = useState(() => readConnectAuthorizeRequest(new URL(window.location.href)));
   const gt = useGT();
   const m = useMessages();
-  const clerk = useClerk();
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn } = useCloudAuth();
   const loadFailed = useClerkLoadFailed();
   const signInOpened = useRef(false);
   const redirecting = useRef(false);
@@ -35,16 +76,11 @@ export function ConnectCliAuthorizeSurface() {
     if (!request) {
       return;
     }
-    clerk.openSignIn(
-      resolveClerkSignInProps(
-        connectCliSignInRedirectUrl(request, window.location.href),
-        isElectron,
-      ),
-    );
+    onOpenSignIn(request);
   };
   const openSignInOnLoad = useEffectEvent(openSignIn);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens Clerk sign-in or navigates the window to the authorize URL once Clerk has loaded
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens auth sign-in or navigates the window to the authorize URL once auth has loaded
   useEffect(() => {
     if (!request || !isLoaded || redirecting.current) {
       return;
@@ -56,13 +92,24 @@ export function ConnectCliAuthorizeSurface() {
       }
       return;
     }
+    if (isLunaMode) {
+      redirecting.current = true;
+      void authorizeCliWithLunaAccount(request).then((redirectTo) => {
+        if (redirectTo) {
+          window.location.assign(redirectTo);
+        } else {
+          redirecting.current = false;
+        }
+      });
+      return;
+    }
     const authorizeUrl = buildConnectCliClerkAuthorizeUrl(request);
     if (!authorizeUrl) {
       return;
     }
     redirecting.current = true;
     window.location.assign(authorizeUrl);
-  }, [isLoaded, isSignedIn, request]);
+  }, [isLoaded, isLunaMode, isSignedIn, request]);
 
   if (!request) {
     return (

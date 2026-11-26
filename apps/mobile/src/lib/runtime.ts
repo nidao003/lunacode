@@ -30,7 +30,7 @@ type RuntimeLayerSource =
   | typeof Tracing.layer;
 
 const layerRuntime = Layer.merge(
-  ManagedRelayLayer.layer(configuredRelayUrl()),
+  ManagedRelayLayer.layer(configuredRelayUrl),
   NativeWebSocket.layer,
 ).pipe(
   Layer.provideMerge(Dpop.layer),

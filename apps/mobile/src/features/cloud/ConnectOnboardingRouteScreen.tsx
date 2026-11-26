@@ -1,9 +1,13 @@
 import { useGT } from "gt-react-native";
+import {
+  LUNACODE_CONNECT_NAME,
+  rebrandTextToLunaCode,
+} from "@t3tools/client-runtime/lunacode/brand-display";
 import { AppBar } from "../../components/ui/AppBar";
 import { Button } from "../../components/ui/Button";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 
-import { useAuth } from "@clerk/expo";
+import { useMobileCloudAuth } from "../../lunacode/cloudAuth";
 import { useNavigation } from "@react-navigation/native";
 import { useState } from "react";
 import { View } from "react-native";
@@ -33,7 +37,7 @@ function ConfiguredConnectOnboardingRouteScreen() {
   const gt = useGT();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { isSignedIn, userId } = useAuth({ treatPendingAsSignedOut: false });
+  const { isSignedIn, userId } = useMobileCloudAuth({ treatPendingAsSignedOut: false });
   const { connectedEnvironments, onSetEnvironmentEnabled, onRemoveEnvironmentPress } =
     useRemoteConnections();
   const { refreshRelayEnvironments } = useConnectionController();
@@ -66,7 +70,7 @@ function ConfiguredConnectOnboardingRouteScreen() {
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
       <AppBar
-        title={gt("Set up {product}", { product: "T3 Connect" })}
+        title={gt("Set up {product}", { product: LUNACODE_CONNECT_NAME })}
         onClose={handleClose}
         refresh={{
           accessibilityLabel: gt("Refresh environments"),
@@ -98,7 +102,11 @@ function ConfiguredConnectOnboardingRouteScreen() {
         ) : (
           <View collapsable={false} className="rounded-[24px] bg-grouped-card p-5">
             <Text className="text-sm leading-normal text-foreground-muted">
-              {gt("Sign in to your T3 account to set up {product}.", { product: "T3 Connect" })}
+              {rebrandTextToLunaCode(
+                gt("Sign in to your T3 account to set up {product}.", {
+                  product: LUNACODE_CONNECT_NAME,
+                }),
+              )}
             </Text>
           </View>
         )}
@@ -109,8 +117,10 @@ function ConfiguredConnectOnboardingRouteScreen() {
               <ConnectionTracesSwitch />
             </View>
             <Text className="px-2 text-sm leading-normal text-foreground-muted">
-              {gt(
-                "Helps the T3 Code team fix connection problems. Traces hold timings, error types, an ID for this app session, and the app version, never your threads, prompts, or code. You can change this in Settings > About T3 Code > Diagnostics.",
+              {rebrandTextToLunaCode(
+                gt(
+                  "Helps the T3 Code team fix connection problems. Traces hold timings, error types, an ID for this app session, and the app version, never your threads, prompts, or code. You can change this in Settings > About T3 Code > Diagnostics.",
+                ),
               )}
             </Text>
           </View>

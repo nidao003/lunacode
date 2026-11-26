@@ -1232,7 +1232,7 @@ it.layer(driverLayer, { excludeTestServices: true })("AcpRegistryDriver", (it) =
                       }
                     : {
                         user_id: "u1",
-                        nickname: "daodao",
+                        nickname: "test-user",
                         user_level_name: "Allegretto",
                       },
                 ),
@@ -1248,7 +1248,7 @@ it.layer(driverLayer, { excludeTestServices: true })("AcpRegistryDriver", (it) =
       );
       yield* instance.snapshot.refresh;
       const next = yield* Fiber.join(published);
-      expect(Option.map(next, (snapshot) => snapshot.auth.email)).toEqual(Option.some("daodao"));
+      expect(Option.map(next, (snapshot) => snapshot.auth.email)).toEqual(Option.some("test-user"));
       expect(Option.map(next, (snapshot) => snapshot.auth.label)).toEqual(
         Option.some("Allegretto"),
       );

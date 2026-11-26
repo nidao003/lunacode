@@ -21,6 +21,28 @@ import { requestUrl } from "../requestUrl.ts";
 
 export const DPOP_REPLAY_MARKER_PREFIX = "dpop-proof-";
 
+const TUNNEL_PREFIX_PATTERN = /^\/t\/[a-z0-9_-]{1,64}$/iu;
+
+export function resolveDpopRequestUrl(
+  request: HttpServerRequest.HttpServerRequest,
+): Option.Option<URL> {
+  const url = requestUrl(request);
+  if (Option.isNone(url)) {
+    return url;
+  }
+  const forwardedPrefix = request.headers["x-forwarded-prefix"];
+  if (typeof forwardedPrefix !== "string" || !TUNNEL_PREFIX_PATTERN.test(forwardedPrefix)) {
+    return url;
+  }
+  const currentPath = url.value.pathname;
+  if (currentPath === forwardedPrefix || currentPath.startsWith(`${forwardedPrefix}/`)) {
+    return url;
+  }
+  const adjusted = new URL(url.value.href);
+  adjusted.pathname = `${forwardedPrefix}${currentPath.startsWith("/") ? currentPath : `/${currentPath}`}`;
+  return Option.some(adjusted);
+}
+
 const mapDpopFailureReason = (code: DpopVerificationFailureCodeType): DpopFailureReason => {
   switch (code) {
     case "time_window":
@@ -62,7 +84,7 @@ export const checkRequestDpopProof = Effect.fn("dpop.checkRequestDpopProof")(fun
   readonly expectedAccessToken?: string;
 }) {
   const proof = input.proof ?? input.request.headers.dpop;
-  const url = requestUrl(input.request);
+  const url = resolveDpopRequestUrl(input.request);
   if (Option.isNone(url)) {
     return yield* new ServerAuthInvalidCredentialError({
       diagnostic: "Invalid DPoP request URL.",

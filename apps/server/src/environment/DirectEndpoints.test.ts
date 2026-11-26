@@ -20,7 +20,11 @@ import { describe, expect, it } from "vite-plus/test";
 import * as ServerConfig from "../config.ts";
 import * as DirectEndpoints from "./DirectEndpoints.ts";
 import * as ServerEnvironment from "./ServerEnvironment.ts";
-import { readIsolatedLinuxBridges, resolveBoundEndpoints } from "./DirectEndpoints.ts";
+import {
+  appendMdnsLanEndpoint,
+  readIsolatedLinuxBridges,
+  resolveBoundEndpoints,
+} from "./DirectEndpoints.ts";
 
 const INTERFACES: ReturnType<typeof NodeOS.networkInterfaces> = {
   lo0: [
@@ -458,4 +462,38 @@ describe("DirectEndpoints Tailscale Serve", () => {
       expect(yield* resolveWithServe(502)).toEqual([]);
     }),
   );
+});
+
+describe("appendMdnsLanEndpoint", () => {
+  it("appends a .local LAN endpoint on wildcard LAN hosts", () => {
+    const base = [{ kind: "lan" as const, httpBaseUrl: "http://192.168.1.10:3773/" }];
+    expect(
+      appendMdnsLanEndpoint(base, {
+        host: "0.0.0.0",
+        port: 3773,
+        hostname: "My-Mac.local",
+        onCloudVm: false,
+      }),
+    ).toEqual([...base, { kind: "lan", httpBaseUrl: "http://my-mac.local:3773/" }]);
+  });
+
+  it("skips .local when bound to a specific IP or running on a cloud VM", () => {
+    const base = [{ kind: "lan" as const, httpBaseUrl: "http://192.168.1.10:3773/" }];
+    expect(
+      appendMdnsLanEndpoint(base, {
+        host: "192.168.1.10",
+        port: 3773,
+        hostname: "my-mac",
+        onCloudVm: false,
+      }),
+    ).toEqual(base);
+    expect(
+      appendMdnsLanEndpoint(base, {
+        host: "0.0.0.0",
+        port: 3773,
+        hostname: "my-mac",
+        onCloudVm: true,
+      }),
+    ).toEqual(base);
+  });
 });

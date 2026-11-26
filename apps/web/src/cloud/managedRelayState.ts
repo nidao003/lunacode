@@ -14,6 +14,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   DEFAULT_MANAGED_TUNNEL_LIMIT,
+  isManagedTunnelProviderKind,
   T3CHAT_PLAN_TUNNEL_LIMITS,
   type RelayClientDeviceRecord,
   type RelayClientEnvironmentRecord,
@@ -186,8 +187,8 @@ export function useManagedTunnelUsage() {
   const used =
     environments.accountId === null
       ? null
-      : (environments.data?.filter(
-          (environment) => environment.endpoint.providerKind === "cloudflare_tunnel",
+      : (environments.data?.filter((environment) =>
+          isManagedTunnelProviderKind(environment.endpoint.providerKind),
         ).length ?? null);
   const cap = t3Chat.accountId !== null && t3Chat.data ? managedTunnelCap(t3Chat.data) : null;
   return {

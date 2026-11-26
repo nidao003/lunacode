@@ -1,7 +1,8 @@
 import type { EnvironmentCloudLinkStateResult } from "@t3tools/contracts";
-import type {
-  RelayManagedEndpoint,
-  RelayManagedEndpointProviderKind,
+import {
+  isManagedTunnelProviderKind,
+  type RelayManagedEndpoint,
+  type RelayManagedEndpointProviderKind,
 } from "@t3tools/contracts/relay";
 import { parseUrl } from "@t3tools/shared/url";
 
@@ -14,7 +15,7 @@ export function isManagedTunnelActive(
   return (
     linkState.linkRevoked !== true &&
     localManagedTunnel &&
-    (relayProviderKind === undefined || relayProviderKind === "cloudflare_tunnel")
+    (relayProviderKind === undefined || isManagedTunnelProviderKind(relayProviderKind))
   );
 }
 
@@ -50,7 +51,7 @@ export function t3ConnectMcpUrl(input: {
 }): string | null {
   const url = input.thisMachine
     ? parseUrl(`https://${input.tunnelHostname ?? ""}`)
-    : input.relayEndpoint?.providerKind === "cloudflare_tunnel"
+    : isManagedTunnelProviderKind(input.relayEndpoint?.providerKind)
       ? parseUrl(input.relayEndpoint.httpBaseUrl)
       : null;
   return url?.protocol === "https:" && TUNNEL_HOSTNAME.test(url.hostname)

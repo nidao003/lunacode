@@ -19,6 +19,7 @@ import type {
   IssueListState,
 } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
+import { rebrandTextToLunaCode } from "@t3tools/client-runtime/lunacode/brand-display";
 import { msg, useGT, useMessages } from "gt-react-native";
 import { use, useRef, useState, type ReactNode } from "react";
 import { Keyboard, Platform, ScrollView, View } from "react-native";
@@ -511,7 +512,9 @@ export function IssuesScreen(
                     : capable.length > 0
                       ? gt("Reconnect to load issues.")
                       : environments.length > 0
-                        ? gt("Update the environment's T3 Code server to browse issues.")
+                        ? rebrandTextToLunaCode(
+                            gt("Update the environment's T3 Code server to browse issues."),
+                          )
                         : gt("Add an environment in Settings to browse its issues."))
                 }
                 variant="plain"

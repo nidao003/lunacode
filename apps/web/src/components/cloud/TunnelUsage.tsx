@@ -4,8 +4,10 @@ import { msg, T, useGT } from "gt-react";
 import type { ReactNode } from "react";
 
 import type { ManagedTunnelUpgrade } from "../../cloud/managedRelayState";
+import { resolveCloudAuthMode } from "../../cloud/publicConfig";
 import { m, type MessageResolver } from "../../i18n/messages";
 import { cn } from "../../lib/utils";
+import { LunaTunnelLimitNotice } from "../../lunacode/LunaTunnelLimitNotice";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "../ui/alert";
 import { Button } from "../ui/button";
 
@@ -102,6 +104,9 @@ export function TunnelLimitAlert({
   readonly onManageTunnels: (() => void) | null;
 }) {
   const gt = useGT();
+  if (resolveCloudAuthMode() === "lunacode") {
+    return <LunaTunnelLimitNotice onManageTunnels={onManageTunnels} />;
+  }
   const action =
     upgrade === "link" && onLinkT3Chat ? (
       <Button size="sm" onClick={onLinkT3Chat}>

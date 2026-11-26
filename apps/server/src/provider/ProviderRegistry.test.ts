@@ -2375,6 +2375,62 @@ it.layer(
           }).auth,
           signedIn.auth,
         );
+        assert.deepStrictEqual(
+          ProviderRegistry.mergeProviderSnapshot(
+            {
+              ...signedIn,
+              auth: {
+                status: "authenticated",
+                type: "oauth-personal",
+                label: "AI Pro",
+                email: "alice@example.com",
+              },
+            },
+            {
+              ...restartProbe,
+              auth: {
+                status: "unknown",
+                type: "oauth-personal",
+                label: "Google account",
+                email: "alice@example.com",
+              },
+            },
+          ).auth,
+          {
+            status: "authenticated",
+            type: "oauth-personal",
+            label: "AI Pro",
+            email: "alice@example.com",
+          },
+        );
+        assert.deepStrictEqual(
+          ProviderRegistry.mergeProviderSnapshot(
+            {
+              ...signedIn,
+              auth: {
+                status: "authenticated",
+                type: "oauth-personal",
+                label: "Google account",
+                email: "alice@example.com",
+              },
+            },
+            {
+              ...restartProbe,
+              auth: {
+                status: "unknown",
+                type: "oauth-personal",
+                label: "AI Ultra",
+                email: "alice@example.com",
+              },
+            },
+          ).auth,
+          {
+            status: "authenticated",
+            type: "oauth-personal",
+            label: "AI Ultra",
+            email: "alice@example.com",
+          },
+        );
       });
 
       it("keeps scanned folders through health checks until Antigravity cannot run", () => {

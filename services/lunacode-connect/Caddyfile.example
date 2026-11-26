@@ -1,0 +1,9 @@
+# Example Caddyfile for HTTPS on port 8443 (connect.example.com:8443 + *.example.com:8443).
+# Caddy preserves host:8443 and handles WebSocket upgrades automatically.
+
+https://connect.example.com:8443, https://*.example.com:8443 {
+	reverse_proxy 127.0.0.1:8787 {
+		header_up Host {http.request.hostport}
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

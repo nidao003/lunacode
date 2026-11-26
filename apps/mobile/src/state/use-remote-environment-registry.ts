@@ -1,5 +1,9 @@
 import * as Dialog from "../components/ui/Dialog";
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
+import {
+  LUNACODE_ACCOUNT_NAME,
+  LUNACODE_CONNECT_NAME,
+} from "@t3tools/client-runtime/lunacode/brand-display";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
 import { Discovery } from "@t3tools/client-runtime/relay";
@@ -28,12 +32,14 @@ import { connectPairingUrl as connectPairingUrlCommand } from "../connection/onb
 const RELAY_REMOVAL_ACCOUNT_NOTE: Record<Discovery.RelayEnvironmentRegistration, string> = {
   registered: msg(
     "It stays on your {connect} account and keeps its host space. Deregister it under {account} → {connect} to free it.",
-    { connect: "T3 Connect", account: "T3 Account" },
+    { connect: LUNACODE_CONNECT_NAME, account: LUNACODE_ACCOUNT_NAME },
   ),
-  unregistered: msg("It's no longer on your {connect} account.", { connect: "T3 Connect" }),
+  unregistered: msg("It's no longer on your {connect} account.", {
+    connect: LUNACODE_CONNECT_NAME,
+  }),
   unknown: msg(
     "This doesn't change your {connect} account. To deregister it there, use {account} → {connect}.",
-    { connect: "T3 Connect", account: "T3 Account" },
+    { connect: LUNACODE_CONNECT_NAME, account: LUNACODE_ACCOUNT_NAME },
   ),
 };
 
@@ -202,7 +208,7 @@ export function useRemoteConnections() {
         environmentId,
       );
       const openAccount = {
-        text: m(msg("Open {account}", { account: "T3 Account" })),
+        text: m(msg("Open {account}", { account: LUNACODE_ACCOUNT_NAME })),
         onPress: () => navigation.navigate("SettingsAuth"),
       };
       const cancel = { text: m(msg("Cancel")), style: "cancel" } as const;

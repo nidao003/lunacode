@@ -137,7 +137,9 @@ export function classifyReachability(
   if (endpoint === null || connector.readyConnections === 0) {
     return fail(
       "connector_not_ready",
-      "cloudflared has not connected to Cloudflare yet.",
+      connector.protocol === "wss"
+        ? "The built-in relay tunnel has not connected yet."
+        : "cloudflared has not connected to Cloudflare yet.",
       "Wait a minute. If it stays, check the network and the server log.",
     );
   }
@@ -345,6 +347,18 @@ const make = Effect.gen(function* () {
       yield* secrets.get(CLOUD_ENDPOINT_RUNTIME_CONFIG).pipe(Effect.orElseSucceed(Option.none)),
     );
     const connector = managedTunnelConfigured ? yield* runtime.inspectConnector : null;
+    if (connector?.protocol === "wss") {
+      return {
+        managedTunnelConfigured,
+        connector,
+        endpoint:
+          connector.readyConnections === 1
+            ? ({ kind: "status", status: 200 } satisfies EndpointProbe)
+            : null,
+        edgeReachable: null,
+        exitNode: null,
+      } satisfies ReachabilityFacts;
+    }
     const endpoint =
       connector?.hostname && connector.readyConnections !== 0
         ? yield* probeEndpoint(connector.hostname)

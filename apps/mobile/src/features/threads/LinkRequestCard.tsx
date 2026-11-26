@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { LUNACODE_CONNECT_NAME } from "@t3tools/client-runtime/lunacode/brand-display";
 import {
   ANOTHER_ADDRESS,
   type LinkableMachine,
@@ -506,7 +507,7 @@ function MachineRow(props: {
     : machine.connected
       ? null
       : machine.connectOnly
-        ? "T3 Connect"
+        ? LUNACODE_CONNECT_NAME
         : gt("Not connected");
   return (
     <Pressable

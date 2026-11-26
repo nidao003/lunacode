@@ -553,8 +553,8 @@ describe("DesktopServerExposure", () => {
               ["desktop-loopback:4173", "http://127.0.0.1:4173/", "loopback"],
               ["desktop-lan:http://192.168.1.20:4173", "http://192.168.1.20:4173/", "lan"],
               [
-                "desktop-lan-mdns:http://daodao-2.local:4173/",
-                "http://daodao-2.local:4173/",
+                "desktop-lan-mdns:http://workstation.local:4173/",
+                "http://workstation.local:4173/",
                 "lan",
               ],
             ],
@@ -564,7 +564,7 @@ describe("DesktopServerExposure", () => {
         undefined,
         undefined,
         undefined,
-        "daodao-2.local",
+        "workstation.local",
       ),
   );
 
@@ -579,14 +579,14 @@ describe("DesktopServerExposure", () => {
         const endpoints = yield* serverExposure.getAdvertisedEndpoints;
         assert.deepEqual(
           endpoints.map((endpoint) => endpoint.httpBaseUrl),
-          ["http://127.0.0.1:4173/", "http://daodao-2.local:4173/"],
+          ["http://127.0.0.1:4173/", "http://workstation.local:4173/"],
         );
       }),
-      { T3CODE_DESKTOP_LAN_HOST: "daodao-2.local" },
+      { T3CODE_DESKTOP_LAN_HOST: "workstation.local" },
       undefined,
       undefined,
       undefined,
-      "daodao-2.local",
+      "workstation.local",
     ),
   );
 });

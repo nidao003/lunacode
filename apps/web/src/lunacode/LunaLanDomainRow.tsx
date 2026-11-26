@@ -128,7 +128,7 @@ export function LunaLanDomainRow({
                 handleSave();
               }
             }}
-            placeholder={`例如 daodao-2.local:${defaultPort} 或 http://daodao-2.local:8000/`}
+            placeholder={`例如 mac-studio.local:${defaultPort} 或 http://mac-studio.local:8000/`}
             aria-label="自定义局域网域名或 URL"
             className="min-w-56 flex-1"
           />

@@ -4,6 +4,7 @@ import {
   linkDestination,
 } from "@t3tools/client-runtime/link-request";
 import { T, useGT } from "gt-react";
+import { LUNACODE_CONNECT_NAME } from "@t3tools/client-runtime/lunacode/brand-display";
 import { useId } from "react";
 
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
@@ -11,7 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Badge } from "../ui/badge";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 
-const T3_CONNECT_NAME = "T3 Connect";
+const T3_CONNECT_NAME = LUNACODE_CONNECT_NAME;
 
 /**
  * Shown wherever a link goes to an address this app does not already have for a

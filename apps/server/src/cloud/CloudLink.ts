@@ -4,6 +4,7 @@ import {
   type EnvironmentCloudRelayConfigResult,
 } from "@t3tools/contracts";
 import {
+  isManagedTunnelProviderKind,
   RelayCloudEnvironmentHealthProofPayload,
   type RelayCloudEnvironmentHealthRequest,
   RelayCloudMintCredentialProofPayload,
@@ -98,7 +99,7 @@ import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
 import * as ManagedLimits from "../policy/managedLimits.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { relayUrlConfig } from "./publicConfig.ts";
+import { isLunaCloudAuthConfiguredConfig, relayUrlConfig } from "./publicConfig.ts";
 import {
   filterRelayResponse,
   relayRequestError,
@@ -729,7 +730,7 @@ const make = Effect.gen(function* () {
         ]);
         if (Option.isNone(runtimeBytes)) return false;
         const config = Option.getOrNull(decodeRuntimeConfig(bytesToString(runtimeBytes.value)));
-        if (config === null || config.providerKind !== "cloudflare_tunnel") return false;
+        if (config === null || !isManagedTunnelProviderKind(config.providerKind)) return false;
         // Require the relay-confirmed port unless falling back after the relay stayed unreachable.
         if (requireConfirmedOrigin) {
           if (Option.isNone(markerBytes)) return false;
@@ -769,7 +770,7 @@ const make = Effect.gen(function* () {
       // Reject unsupported runtimes before they can stop a healthy tunnel.
       if (
         payload.endpointRuntime !== null &&
-        payload.endpointRuntime.providerKind !== "cloudflare_tunnel"
+        !isManagedTunnelProviderKind(payload.endpointRuntime.providerKind)
       ) {
         return yield* new CloudLinkEndpointUnavailableError({
           reason: "runtime-not-started",
@@ -891,13 +892,20 @@ const make = Effect.gen(function* () {
         },
         schema: RelayEnvironmentLinkChallengeResponse,
       });
+      const isLunaAuth = yield* isLunaCloudAuthConfiguredConfig.pipe(
+        Effect.orElseSucceed(() => false),
+      );
       const proof = yield* makeCloudLinkProof({
         challenge: challenge.challenge,
         relayIssuer: relayUrl,
         endpoint: {
           httpBaseUrl: parsedOrigin.httpBaseUrl,
           wsBaseUrl: parsedOrigin.wsBaseUrl,
-          providerKind: managedTunnelsEnabled ? "cloudflare_tunnel" : "manual",
+          providerKind: managedTunnelsEnabled
+            ? isLunaAuth
+              ? "t3_relay"
+              : "cloudflare_tunnel"
+            : "manual",
         },
         origin: parsedOrigin.origin,
       });
@@ -1022,7 +1030,7 @@ const make = Effect.gen(function* () {
     }
 
     const config = Option.getOrNull(decodeRuntimeConfig(bytesToString(runtimeConfig.value)));
-    if (config?.providerKind !== "cloudflare_tunnel") {
+    if (!isManagedTunnelProviderKind(config?.providerKind)) {
       return { status: "not_linked" as const };
     }
 
@@ -1150,7 +1158,7 @@ const make = Effect.gen(function* () {
         error.rejection === "unauthorized" ? markLinkRevoked(credential, error) : Effect.void,
       ),
     );
-    if (recovered.endpointRuntime.providerKind !== "cloudflare_tunnel") {
+    if (!isManagedTunnelProviderKind(recovered.endpointRuntime.providerKind)) {
       return yield* new CloudLinkInternalError({ operation: "unsupported-recovered-tunnel" });
     }
 
@@ -1189,7 +1197,7 @@ const make = Effect.gen(function* () {
   const applyRelayConfig = Effect.fn("environment.cloud.relayConfig")(
     function* (payload: RelayEnvironmentConfigRequest) {
       const result = yield* applyCloudRelayConfig(payload, { replaceRevokedLink: true });
-      if (payload.endpointRuntime?.providerKind === "cloudflare_tunnel") {
+      if (isManagedTunnelProviderKind(payload.endpointRuntime?.providerKind)) {
         const address = httpServer.address;
         if (typeof address === "string" || !("port" in address)) {
           return yield* new CloudLinkInternalError({ operation: "resolve-server-origin" });

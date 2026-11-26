@@ -1,7 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
 import type { RelayLinkProofRequest } from "@t3tools/contracts/relay";
 
-import { linkProofScopes, parseManagedEndpointLocalOrigin } from "./linkChecks.ts";
+import {
+  isSupportedLinkProviderKind,
+  linkProofScopes,
+  parseManagedEndpointLocalOrigin,
+} from "./linkChecks.ts";
 
 describe("parseManagedEndpointLocalOrigin", () => {
   it.each([
@@ -51,7 +55,14 @@ describe("link proof provider kinds", () => {
   });
 
   it("only claims the managed-tunnel scope for tunnel links", () => {
+    expect(isSupportedLinkProviderKind(proofRequest("cloudflare_tunnel"))).toBe(true);
+    expect(isSupportedLinkProviderKind(proofRequest("t3_relay"))).toBe(true);
+    expect(isSupportedLinkProviderKind(proofRequest("manual"))).toBe(true);
     expect(linkProofScopes(proofRequest("cloudflare_tunnel"))).toEqual([
+      "agent_activity_notifications",
+      "managed_tunnels",
+    ]);
+    expect(linkProofScopes(proofRequest("t3_relay"))).toEqual([
       "agent_activity_notifications",
       "managed_tunnels",
     ]);

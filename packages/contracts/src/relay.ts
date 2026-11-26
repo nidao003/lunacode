@@ -159,6 +159,12 @@ export const RelayManagedEndpointProviderKind = Schema.Literals([
 ]);
 export type RelayManagedEndpointProviderKind = typeof RelayManagedEndpointProviderKind.Type;
 
+export function isManagedTunnelProviderKind(
+  kind: RelayManagedEndpointProviderKind | null | undefined,
+): kind is "cloudflare_tunnel" | "t3_relay" {
+  return kind === "cloudflare_tunnel" || kind === "t3_relay";
+}
+
 export const RelayManagedEndpoint = Schema.Struct({
   httpBaseUrl: TrimmedNonEmptyString,
   wsBaseUrl: TrimmedNonEmptyString,

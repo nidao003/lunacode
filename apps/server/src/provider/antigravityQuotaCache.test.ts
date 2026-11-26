@@ -246,4 +246,33 @@ describe("makeAntigravityQuotaCache", () => {
         expect(yield* cache.hydrate("user@example.com")).toEqual(goodLimits);
       }).pipe(Effect.scoped, Effect.provide(layer)),
   );
+
+  it.effect("persists and preserves subscription tier independently of quota window probes", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "agy-quota-plan-test-" });
+      const cache = yield* makeAntigravityQuotaCache({ stateDir, instanceId: "agy-plan" });
+
+      // Persist tier before any usage probe runs; hydrate stays empty while readPlan succeeds.
+      yield* cache.persistPlan("Alice@Example.com", "AI Pro");
+      expect(yield* cache.readPlan("alice@example.com")).toBe("AI Pro");
+      expect(yield* cache.readPlan("bob@example.com")).toBeUndefined();
+      expect(yield* cache.hydrate("alice@example.com")).toBeUndefined();
+
+      // A later usage probe with undefined plan preserves the known subscription tier.
+      yield* cache.persist(goodLimits, "alice@example.com", undefined);
+      expect(yield* cache.hydrate("alice@example.com")).toEqual(goodLimits);
+      expect(yield* cache.readPlan("alice@example.com")).toBe("AI Pro");
+
+      // Updating plan preserves existing cached windows.
+      yield* cache.persistPlan("alice@example.com", "AI Ultra");
+      expect(yield* cache.readPlan("alice@example.com")).toBe("AI Ultra");
+      expect(yield* cache.hydrate("alice@example.com")).toEqual(goodLimits);
+
+      // Switching accounts replaces the plan cleanly.
+      yield* cache.persistPlan("bob@example.com", "Free");
+      expect(yield* cache.readPlan("alice@example.com")).toBeUndefined();
+      expect(yield* cache.readPlan("bob@example.com")).toBe("Free");
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
 });

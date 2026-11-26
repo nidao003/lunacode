@@ -1,6 +1,10 @@
 import { msg } from "gt-react-native";
 import { unseenConnectDevices } from "@t3tools/client-runtime/connect-device-notices";
 import {
+  LUNACODE_CONNECT_NAME,
+  rebrandTextToLunaCode,
+} from "@t3tools/client-runtime/lunacode/brand-display";
+import {
   AuthAccessWriteScope,
   type AuthConnectDevice,
   type AuthPairingLink,
@@ -100,16 +104,20 @@ const newDeviceNotices = createApprovalPromptQueue<NewDeviceNotice>((notice, ans
     Dialog.alert(
       m(msg("New device signed in to {environment}", { environment: current.label })),
       unseen.length === 1
-        ? m(
-            msg(
-              "{device} connected through {product}. If this was not you, remove it in Settings → Access in T3 Code on that computer.",
-              { device: firstDevice, product: "T3 Connect" },
+        ? rebrandTextToLunaCode(
+            m(
+              msg(
+                "{device} connected through {product}. If this was not you, remove it in Settings → Access in T3 Code on that computer.",
+                { device: firstDevice, product: LUNACODE_CONNECT_NAME },
+              ),
             ),
           )
-        : m(
-            msg(
-              "{count, plural, one {{count} device} other {{count} devices}} connected through {product}. If this was not you, remove them in Settings → Access in T3 Code on that computer.",
-              { count: unseen.length, product: "T3 Connect" },
+        : rebrandTextToLunaCode(
+            m(
+              msg(
+                "{count, plural, one {{count} device} other {{count} devices}} connected through {product}. If this was not you, remove them in Settings → Access in T3 Code on that computer.",
+                { count: unseen.length, product: LUNACODE_CONNECT_NAME },
+              ),
             ),
           ),
       [

@@ -1,4 +1,5 @@
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { LUNACODE_CONNECT_NAME } from "@t3tools/client-runtime/lunacode/brand-display";
 import { useNavigate } from "@tanstack/react-router";
 import {
   type AtomCommandResult,
@@ -118,13 +119,13 @@ function NewConnectDeviceToast({
           ? m(
               msg("{device} connected through {product}. Not you? Review it.", {
                 device: describeConnectDeviceClient(first),
-                product: "T3 Connect",
+                product: LUNACODE_CONNECT_NAME,
               }),
             )
           : m(
               msg(
                 "{count, plural, one {{count} device} other {{count} devices}} connected through {product}. Not you? Review them.",
-                { count: unseen.length, product: "T3 Connect" },
+                { count: unseen.length, product: LUNACODE_CONNECT_NAME },
               ),
             ),
       timeout: 0,

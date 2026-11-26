@@ -1,4 +1,5 @@
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
+import { LUNACODE_CONNECT_NAME } from "@t3tools/client-runtime/lunacode/brand-display";
 import { msg, useGT, useMessages } from "gt-react-native";
 import * as Dialog from "../../components/ui/Dialog";
 import { managedCapabilityDenial } from "@t3tools/client-runtime/contract-labels";
@@ -11,7 +12,7 @@ import { readEnvironmentScope } from "../../state/session";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { serverEnvironment } from "../../state/server";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
-import { useAuth } from "@clerk/expo";
+import { useMobileCloudAuth } from "../../lunacode/cloudAuth";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import * as Notifications from "expo-notifications";
 import { useNavigation } from "@react-navigation/native";
@@ -197,7 +198,9 @@ export function SettingsNotificationsRouteScreen() {
           contentContainerClassName="px-5 pt-4"
         >
           <Text className="text-base text-foreground-muted">
-            {gt("Notifications require {product} in this app build.", { product: "T3 Connect" })}
+            {gt("Notifications require {product} in this app build.", {
+              product: LUNACODE_CONNECT_NAME,
+            })}
           </Text>
         </ScrollView>
       </SettingsScreen>
@@ -219,7 +222,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
       : agentAwarenessPlatform.subtitle;
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-  const { getToken, isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  const { getToken, isLoaded, isSignedIn } = useMobileCloudAuth({ treatPendingAsSignedOut: false });
   const { savedConnectionsById } = useSavedRemoteConnections();
   const notificationStatus = useAtomValue(notificationStatusAtom);
   const setNotificationStatus = useAtomSet(notificationStatusAtom);
@@ -281,7 +284,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
           gt("Couldn't finish enabling notifications"),
           gt(
             "Notification access was granted, but this device could not be registered with {product}. Notifications will start once registration succeeds.",
-            { product: "T3 Connect" },
+            { product: LUNACODE_CONNECT_NAME },
           ),
         );
       }
@@ -312,9 +315,9 @@ function ConfiguredSettingsNotificationsRouteScreen() {
 
   const promptSignIn = () => {
     Dialog.alert(
-      gt("Sign in to {product}", { product: "T3 Connect" }),
+      gt("Sign in to {product}", { product: LUNACODE_CONNECT_NAME }),
       gt("Live Activity updates require {product} so relay can deliver updates to this device.", {
-        product: "T3 Connect",
+        product: LUNACODE_CONNECT_NAME,
       }),
       [
         { text: gt("Cancel"), style: "cancel" },
@@ -440,7 +443,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
         gt("Couldn't finish enabling activity updates"),
         gt(
           "This device could not be registered with {product}, so activity updates won't appear yet. They'll start once registration succeeds.",
-          { product: "T3 Connect" },
+          { product: LUNACODE_CONNECT_NAME },
         ),
       );
     }

@@ -28,6 +28,15 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ManagedLimits from "../policy/managedLimits.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
+import {
+  startT3RelayTunnelClient,
+  type T3RelayTunnelHandle,
+} from "../lunacode/t3RelayTunnelClient.ts";
+import {
+  CLOUD_ENDPOINT_CONFIRMED_ORIGIN,
+  decodeConfirmedOrigin,
+  RELAY_URL_SECRET,
+} from "./config.ts";
 import * as RelayClientLedger from "./RelayClientLedger.ts";
 
 export type CloudManagedEndpointRuntimeStatus =
@@ -44,7 +53,7 @@ export type CloudManagedEndpointRuntimeStatus =
     }
   | {
       readonly status: "running";
-      readonly providerKind: "cloudflare_tunnel";
+      readonly providerKind: "cloudflare_tunnel" | "t3_relay";
       readonly pid: number;
       readonly tunnelId?: string;
       readonly tunnelName?: string;
@@ -89,6 +98,13 @@ export class CloudManagedEndpointRuntime extends Context.Service<
     readonly withLinkStateLock: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
   }
 >()("t3/cloud/ManagedEndpointRuntime/CloudManagedEndpointRuntime") {}
+
+interface ActiveT3RelayConnector {
+  readonly handle: T3RelayTunnelHandle;
+  readonly configKey: string;
+  readonly config: RelayManagedEndpointRuntimeConfig;
+  readonly startedAtMillis: number;
+}
 
 interface ActiveConnector {
   readonly child: ChildProcessSpawner.ChildProcessHandle;
@@ -236,6 +252,7 @@ export const make = Effect.gen(function* () {
   // Without T3 Connect no connector ever runs, whoever asks for one.
   const connectAllowed = ManagedLimits.allowsConnect(yield* ManagedPolicy.ManagedPolicy);
   const activeRef = yield* Ref.make<ActiveConnector | null>(null);
+  const activeT3RelayRef = yield* Ref.make<ActiveT3RelayConnector | null>(null);
   const desiredConfigRef = yield* Ref.make<RelayManagedEndpointRuntimeConfig | null>(null);
   const recoveryRequests = yield* Queue.sliding<RelayManagedEndpointRuntimeConfig>(1);
   const tunnelConnections = yield* Queue.sliding<void>(1);
@@ -285,7 +302,7 @@ export const make = Effect.gen(function* () {
   const quicStallsRef = yield* Ref.make<ReadonlyArray<number>>([]);
   let reconcileConfig: CloudManagedEndpointRuntime["Service"]["applyConfig"];
 
-  const { logsDir } = yield* ServerConfig.ServerConfig;
+  const { logsDir, port: serverPort } = yield* ServerConfig.ServerConfig;
   const path = yield* Path.Path;
   const relayClientLogPath = path.join(logsDir, RELAY_CLIENT_LOG_FILE);
   // Synchronous appends avoid a flush timer for this low-volume log.
@@ -350,6 +367,10 @@ export const make = Effect.gen(function* () {
   const stopActive = Effect.gen(function* () {
     const active = yield* Ref.getAndSet(activeRef, null);
     yield* stopConnector(active);
+    const activeT3Relay = yield* Ref.getAndSet(activeT3RelayRef, null);
+    if (activeT3Relay) {
+      yield* Effect.sync(() => activeT3Relay.handle.close());
+    }
   });
 
   // Lives until connector exit and starts replacements; avoid nested lifetime spans.
@@ -733,11 +754,141 @@ export const make = Effect.gen(function* () {
   };
 
   reconcileConfig = Effect.fn("CloudManagedEndpointRuntime.reconcileConfig")(function* (config) {
-    if (!config || config.providerKind !== "cloudflare_tunnel") {
+    if (!config) {
       yield* stopActive;
-      return config
-        ? { status: "unsupported", providerKind: config.providerKind }
-        : { status: "disabled" };
+      return { status: "disabled" } satisfies CloudManagedEndpointRuntimeStatus;
+    }
+
+    if (config.providerKind === "t3_relay") {
+      const nextConfigKey = runtimeConfigKey(config);
+      const activeT3Relay = yield* Ref.get(activeT3RelayRef);
+      if (activeT3Relay?.configKey === nextConfigKey && activeT3Relay.handle.isRunning()) {
+        return {
+          status: "running",
+          providerKind: "t3_relay",
+          pid: process.pid,
+          ...(activeT3Relay.config.tunnelId ? { tunnelId: activeT3Relay.config.tunnelId } : {}),
+          ...(activeT3Relay.config.tunnelName
+            ? { tunnelName: activeT3Relay.config.tunnelName }
+            : {}),
+        } satisfies CloudManagedEndpointRuntimeStatus;
+      }
+
+      yield* stopActive;
+
+      const [relayBytes, confirmedOriginBytes] = yield* Effect.all([
+        secrets.get(RELAY_URL_SECRET).pipe(Effect.orElseSucceed(Option.none)),
+        secrets.get(CLOUD_ENDPOINT_CONFIRMED_ORIGIN).pipe(Effect.orElseSucceed(Option.none)),
+      ]);
+      const relayUrl = Option.isSome(relayBytes)
+        ? new TextDecoder().decode(relayBytes.value).trim()
+        : "";
+      const confirmedOrigin = Option.isSome(confirmedOriginBytes)
+        ? Option.getOrNull(
+            decodeConfirmedOrigin(new TextDecoder().decode(confirmedOriginBytes.value)),
+          )
+        : null;
+      const tunnelId = config.tunnelId;
+      if (!relayUrl || !tunnelId) {
+        return {
+          status: "failed",
+          providerKind: "t3_relay",
+          failure: "spawn-failed",
+          reason: "Missing relay URL or tunnel id for t3_relay tunnel.",
+          ...(tunnelId ? { tunnelId } : {}),
+          ...(config.tunnelName ? { tunnelName: config.tunnelName } : {}),
+        } satisfies CloudManagedEndpointRuntimeStatus;
+      }
+
+      const localHost = confirmedOrigin?.origin.localHttpHost ?? "127.0.0.1";
+      const localPort = confirmedOrigin?.origin.localHttpPort ?? serverPort;
+      const startedAtMillis = yield* Clock.currentTimeMillis;
+      const handle = startT3RelayTunnelClient({
+        relayUrl,
+        tunnelId,
+        connectorToken: config.connectorToken,
+        localHost,
+        localPort,
+      });
+      const entry: ActiveT3RelayConnector = {
+        handle,
+        configKey: nextConfigKey,
+        config,
+        startedAtMillis,
+      };
+      yield* Ref.set(activeT3RelayRef, entry);
+
+      yield* Effect.forkIn(
+        Effect.promise(() =>
+          handle.ready.then(
+            () => true,
+            () => false,
+          ),
+        ).pipe(
+          Effect.flatMap((ok) =>
+            ok
+              ? Queue.offer(tunnelConnections, undefined).pipe(
+                  Effect.andThen(Queue.offer(readinessChanges, undefined)),
+                )
+              : Effect.void,
+          ),
+        ),
+        runtimeScope,
+      );
+
+      yield* Effect.forkIn(
+        Effect.gen(function* () {
+          yield* Effect.promise(() => handle.exited);
+          const current = yield* Ref.get(activeT3RelayRef);
+          if (current?.handle !== handle) return;
+          const uptimeMillis = (yield* Clock.currentTimeMillis) - entry.startedAtMillis;
+          const delayMs = yield* Ref.modify(restartDelayRef, (delay) =>
+            uptimeMillis >= RELAY_RESTART_STABLE_UPTIME_MS
+              ? [0, 0]
+              : [
+                  delay,
+                  delay === 0
+                    ? RELAY_RESTART_BACKOFF_BASE_MS
+                    : Math.min(delay * 2, RELAY_RESTART_BACKOFF_MAX_MS),
+                ],
+          );
+          if (delayMs > 0) {
+            yield* Effect.sleep(Duration.millis(delayMs));
+          }
+          yield* reconcileSemaphore.withPermits(1)(
+            Effect.gen(function* () {
+              const stillCurrent = yield* Ref.get(activeT3RelayRef);
+              if (stillCurrent?.handle !== handle) return;
+              yield* Ref.set(activeT3RelayRef, null);
+              const desired = yield* Ref.get(desiredConfigRef);
+              if (
+                shutdownSignalReceived ||
+                !desired ||
+                desired.providerKind !== "t3_relay" ||
+                runtimeConfigKey(desired) !== entry.configKey
+              ) {
+                return;
+              }
+              yield* Queue.offer(recoveryRequests, entry.config);
+              yield* reconcileConfig(desired);
+            }),
+          );
+        }).pipe(Effect.ignoreCause),
+        runtimeScope,
+      );
+
+      return {
+        status: "running",
+        providerKind: "t3_relay",
+        pid: process.pid,
+        tunnelId,
+        ...(config.tunnelName ? { tunnelName: config.tunnelName } : {}),
+      } satisfies CloudManagedEndpointRuntimeStatus;
+    }
+
+    if (config.providerKind !== "cloudflare_tunnel") {
+      yield* stopActive;
+      return { status: "unsupported", providerKind: config.providerKind };
     }
 
     const nextConfigKey = runtimeConfigKey(config);
@@ -915,6 +1066,19 @@ export const make = Effect.gen(function* () {
     pid: number,
     stillDead: Effect.Effect<boolean>,
   ) {
+    const activeT3Relay = yield* Ref.get(activeT3RelayRef);
+    if (activeT3Relay && process.pid === pid && (yield* stillDead)) {
+      yield* Effect.logWarning(
+        "Built-in t3_relay tunnel has no live connection; closing it to reconnect",
+        {
+          pid,
+          tunnelId: activeT3Relay.config.tunnelId,
+          tunnelName: activeT3Relay.config.tunnelName,
+        },
+      );
+      activeT3Relay.handle.close();
+      return true;
+    }
     const active = yield* Ref.get(activeRef);
     if (!active || Number(active.child.pid) !== pid || !(yield* stillDead)) return false;
     yield* Effect.logWarning(
@@ -939,6 +1103,16 @@ export const make = Effect.gen(function* () {
     );
 
   const inspectConnector = Effect.gen(function* () {
+    const activeT3Relay = yield* Ref.get(activeT3RelayRef);
+    if (activeT3Relay?.handle.isRunning()) {
+      return {
+        pid: process.pid,
+        readyConnections: activeT3Relay.handle.isReady() ? 1 : 0,
+        hostname: activeT3Relay.handle.publicHost(),
+        origin: activeT3Relay.handle.originUrl,
+        protocol: "wss",
+      } satisfies ConnectorFacts;
+    }
     const active = yield* Ref.get(activeRef);
     if (!active || !(yield* active.child.isRunning.pipe(Effect.orElseSucceed(() => false)))) {
       return null;

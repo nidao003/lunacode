@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { cliArchiveTarCommand, newestCliReleaseVersion, parseChecksums } from "./cliRelease.ts";
+import {
+  CLI_RELEASES_PAGE_URL,
+  cliArchiveTarCommand,
+  cliReleaseAssetUrl,
+  cliReleaseDownloadBaseUrl,
+  newestCliReleaseVersion,
+  parseChecksums,
+} from "./cliRelease.ts";
 
 describe("cliRelease", () => {
   it("parses sha256sum output including binary-mode markers", () => {
@@ -25,18 +32,31 @@ describe("cliRelease", () => {
     expect(cliArchiveTarCommand("win32", {})).toBe("C:\\Windows\\System32\\tar.exe");
   });
 
-  it("picks the newest non-draft release on the requested channel", () => {
+  it("picks the newest non-draft release on the requested channel across lunacode-v and v tags", () => {
     const releases = [
-      { tag_name: "v1.2.4-preview.20260912.9", draft: true },
-      { tag_name: "v1.2.4-preview.20260912.8" },
+      { tag_name: "lunacode-v1.2.4-preview.20260912.9", draft: true },
+      { tag_name: "lunacode-v1.2.4-preview.20260912.8" },
       { tag_name: "v1.2.4-nightly.20260912.7" },
       { tag_name: "desktop-preview" },
-      { tag_name: "v1.2.3" },
+      { tag_name: "lunacode-v1.2.3" },
       { tag_name: "v1.2.3-nightly.20260911.2" },
     ];
     expect(newestCliReleaseVersion(releases, "preview")).toBe("1.2.4-preview.20260912.8");
     expect(newestCliReleaseVersion(releases, "nightly")).toBe("1.2.4-nightly.20260912.7");
     expect(newestCliReleaseVersion(releases, "stable")).toBe("1.2.3");
-    expect(newestCliReleaseVersion([{ tag_name: "v1.2.3" }], "preview")).toBeUndefined();
+    expect(newestCliReleaseVersion([{ tag_name: "lunacode-v1.2.3" }], "preview")).toBeUndefined();
+  });
+
+  it("points default downloads at nidao003/lunacode lunacode-v tags and keeps v tags for mirrors", () => {
+    expect(CLI_RELEASES_PAGE_URL).toBe("https://github.com/nidao003/lunacode/releases");
+    expect(cliReleaseDownloadBaseUrl("1.2.3")).toBe(
+      "https://github.com/nidao003/lunacode/releases/download/lunacode-v1.2.3",
+    );
+    expect(cliReleaseAssetUrl("1.2.3", "SHA256SUMS")).toBe(
+      "https://github.com/nidao003/lunacode/releases/download/lunacode-v1.2.3/SHA256SUMS",
+    );
+    expect(cliReleaseAssetUrl("1.2.3", "SHA256SUMS", "https://updates.example.com/mirror/")).toBe(
+      "https://updates.example.com/mirror/v1.2.3/SHA256SUMS",
+    );
   });
 });

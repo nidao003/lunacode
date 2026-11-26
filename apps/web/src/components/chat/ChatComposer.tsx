@@ -2,6 +2,7 @@ import { copySnapshot } from "./copySnapshot";
 import { type LunaContextTelemetry } from "../../lunacode/contextTelemetry";
 import { type DeterministicHandoffResult } from "../../lunacode/handoffBuilder";
 import { LunaContextFooterBar } from "../../lunacode/LunaContextFooterBar";
+import { LunaPendingApprovalBanner } from "../../lunacode/LunaPendingApprovalBanner";
 import { VoiceInputSetup } from "./VoiceInputSetup";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { insertAttachmentReferencesForDraft } from "./composerAttachmentReferences";
@@ -35,6 +36,7 @@ import type {
   ModelSelection,
   ProjectId,
   PreviewAnnotationPayload,
+  ProviderApprovalDecision,
   ThreadContextRecord,
   EnvironmentContextRecord,
   ResolvedKeybindingsConfig,
@@ -495,6 +497,9 @@ export interface ChatComposerProps {
   ) => void;
   onResume: () => void;
   onInterrupt: () => void;
+  onRespondToApproval?:
+    | ((requestId: RuntimeRequestId, decision: ProviderApprovalDecision) => Promise<unknown>)
+    | undefined;
   onSelectActivePendingUserInputOption: (questionId: string, optionValue: string) => void;
   onAdvanceActivePendingUserInput: () => void;
   onDismissActivePendingUserInput: (requestId: RuntimeRequestId) => void;
@@ -602,6 +607,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     captureDetachedSend,
     onResume,
     onInterrupt,
+    onRespondToApproval,
     onSelectActivePendingUserInputOption,
     onAdvanceActivePendingUserInput,
     onDismissActivePendingUserInput,
@@ -657,6 +663,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     incomingPendingApproval && !heldRequestIds.has(incomingPendingApproval.requestId)
       ? incomingPendingApproval
       : null;
+  const visiblePendingApprovals = pendingApprovals.filter(
+    (approval) => !heldRequestIds.has(approval.requestId),
+  );
   const holdingUserInput = incomingPendingUserInputs[0]
     ? heldRequestIds.has(incomingPendingUserInputs[0].requestId)
     : false;
@@ -1287,7 +1296,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const activePendingUserInput = pendingUserInputs[0] ?? null;
   const isChoiceOnlyPendingQuestion =
     activePendingProgress?.activeQuestion?.allowCustomAnswer === false;
-  const showComposerTopDrawer = pendingUserInputs.length > 0;
+  const showPendingApprovalBanner =
+    visiblePendingApprovals.length > 0 &&
+    onRespondToApproval !== undefined &&
+    pendingUserInputs.length === 0;
+  const showComposerTopDrawer = pendingUserInputs.length > 0 || showPendingApprovalBanner;
   const showCollapsedMobilePromptRow = isComposerCollapsedMobile;
   const showComposerAttachAction =
     fileStagingLimit !== null &&
@@ -2661,7 +2674,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     importContextRecords,
     expandMobileComposer: expandMobileComposerStable,
   });
-  const hasBlockingComposerTopDrawer = pendingUserInputs.length > 0;
+  const hasBlockingComposerTopDrawer =
+    activePendingApproval !== null || pendingUserInputs.length > 0;
   const composerControlsCollapsed = isComposerCollapsedMobile;
   // The collapsed mobile web composer keeps a second controls row inside the card.
   const showInlineRestingControls = isComposerCollapsedMobile;
@@ -3708,8 +3722,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           <ComposerBannerStack items={shelfItems} />
           {showComposerTopDrawer ? (
             <ComposerBanner.Attachment>
-              <ComposerBanner.Root data-chat-composer-top-drawer="true" variant="info">
-                {pendingUserInputs.length > 0 ? (
+              {pendingUserInputs.length > 0 ? (
+                <ComposerBanner.Root data-chat-composer-top-drawer="true" variant="info">
                   <ComposerPendingUserInputPanel
                     pendingUserInputs={pendingUserInputs}
                     cwd={gitCwd ?? undefined}
@@ -3726,8 +3740,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onAdvance={onAdvanceActivePendingUserInput}
                     onDismiss={onDismissActivePendingUserInput}
                   />
-                ) : null}
-              </ComposerBanner.Root>
+                </ComposerBanner.Root>
+              ) : showPendingApprovalBanner ? (
+                <LunaPendingApprovalBanner
+                  approvals={visiblePendingApprovals}
+                  canOperateThread={canOperateThread}
+                  respondingRequestIds={respondingRequestIds}
+                  onRespondToApproval={onRespondToApproval}
+                />
+              ) : null}
             </ComposerBanner.Attachment>
           ) : null}
         </ComposerBanner.Column>

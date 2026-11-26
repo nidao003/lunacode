@@ -134,7 +134,7 @@ it.live("reads the account and quota from a still-valid Kimi sign-in", () =>
                   ? usages
                   : {
                       user_id: "cnva68ecp7f4sms050t0",
-                      nickname: "daodao",
+                      nickname: "test-user",
                       user_level_name: "Allegretto",
                     },
               ),
@@ -147,7 +147,7 @@ it.live("reads the account and quota from a still-valid Kimi sign-in", () =>
       "https://api.kimi.com/coding/v1/me",
       "https://api.kimi.com/coding/v1/usages",
     ]);
-    assert.strictEqual(probe?.email, "daodao");
+    assert.strictEqual(probe?.email, "test-user");
     assert.strictEqual(probe?.label, "Allegretto");
     assert.strictEqual(probe?.usageLimits.windows.length, 2);
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),

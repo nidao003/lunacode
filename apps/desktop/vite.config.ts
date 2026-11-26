@@ -25,6 +25,16 @@ const publicConfigDefine = {
   __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
     repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
   ),
+  __T3CODE_BUILD_LUNACODE_AUTH_URL__: JSON.stringify(
+    repoEnv.LUNACODE_AUTH_URL?.trim() || repoEnv.LUNACODE_CONNECT_URL?.trim() || "",
+  ),
+  __T3CODE_BUILD_LUNACODE_SELF_HOSTED_AUTH__: JSON.stringify(
+    (repoEnv.LUNACODE_SELF_HOSTED_AUTH?.trim() === "1" ||
+      Boolean(repoEnv.LUNACODE_AUTH_URL?.trim() || repoEnv.LUNACODE_CONNECT_URL?.trim())) &&
+      !repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim()
+      ? "1"
+      : "",
+  ),
 };
 
 const PAGE_WORLD_MODULE = /[\\/]src[\\/]preview[\\/]PageWorld\.ts$/;

@@ -2,6 +2,8 @@ import { useState, useSyncExternalStore } from "react";
 import { SettingsGroup } from "~/components/settings/SettingsGroup";
 import { SettingsSection } from "~/components/settings/settingsLayout";
 import { Button } from "~/components/ui/button";
+import { resolveCloudAuthMode } from "~/cloud/publicConfig";
+import { LunaServerUrlConfigCard } from "./LunaServerUrlConfigCard";
 import { DEFAULT_COMPACT_TEMPLATE_TEXT, useLunaPreferences } from "./preferences";
 
 export interface LunaRtkStatus {
@@ -134,6 +136,12 @@ export function LunaCodeSettingsSection() {
 
   return (
     <SettingsSection id="lunacode" title="LunaCode 定制能力">
+      {resolveCloudAuthMode() !== "clerk" ? (
+        <SettingsGroup>
+          <LunaServerUrlConfigCard />
+        </SettingsGroup>
+      ) : null}
+
       {/* OpenViking 云端记忆：由 Agent 原生插件提供，LunaCode 不再自带客户端 */}
       <SettingsGroup>
         <div className="space-y-2 p-4 text-xs">

@@ -16,6 +16,7 @@ import type {
 
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import type { PreparedConnection } from "../connection/model.ts";
+import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
 import {
   makeEnvironmentHttpApiGroupClient,
@@ -161,19 +162,15 @@ export const transcribeCloudPcm = (
 };
 
 export const getEnvironmentSpeechStreamUrl = (prepared: PreparedConnection) => {
-  let endpoint = prepared.httpBaseUrl;
   return request({
     group: "auth",
     prepared,
     method: "POST",
-    path: (urls) => {
-      endpoint = urls.webSocketTicketFor({ params: { use: "media" } });
-      return endpoint;
-    },
+    path: (urls) => urls.webSocketTicketFor({ params: { use: "media" } }),
     run: ({ client, headers }) => client.webSocketTicketFor({ headers, params: { use: "media" } }),
   }).pipe(
     Effect.map(({ ticket }) => {
-      const url = new URL(SPEECH_STREAM_PATH, endpoint);
+      const url = new URL(environmentEndpointUrl(prepared.httpBaseUrl, SPEECH_STREAM_PATH));
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
       url.searchParams.set("wsTicket", Redacted.value(ticket));
       return url.toString();

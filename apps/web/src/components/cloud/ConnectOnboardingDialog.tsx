@@ -1,5 +1,6 @@
-import { useAuth } from "@clerk/react";
 import { useAtomValue } from "@effect/atom-react";
+import { rebrandTextToLunaCode } from "@t3tools/client-runtime/lunacode/brand-display";
+import { useCloudAuth } from "~/lunacode/cloudAuth";
 import { managedCapabilityDenial } from "@t3tools/client-runtime/contract-labels";
 import {
   AuthAccessWriteScope,
@@ -70,7 +71,7 @@ function canPublishOnEnvironment(id: EnvironmentId | null): boolean {
 
 function ConfiguredConnectOnboardingDialog() {
   // Pending Clerk sessions must not look signed out or activation would look like a new sign-in.
-  const { isLoaded, isSignedIn, userId } = useAuth({ treatPendingAsSignedOut: false });
+  const { isLoaded, isSignedIn, userId } = useCloudAuth({ treatPendingAsSignedOut: false });
   const gt = useGT();
   const m = useMessages();
   const [optOutState, setOptOutState] = useLocalStorage(
@@ -225,9 +226,11 @@ function ConfiguredConnectOnboardingDialog() {
     if (!ok) return;
     toastManager.add({
       type: "success",
-      title: gt("T3 Connect enabled"),
+      title: rebrandTextToLunaCode(gt("T3 Connect enabled")),
       description: exposeEnvironment
-        ? gt("This environment is available to your other devices through T3 Connect.")
+        ? rebrandTextToLunaCode(
+            gt("This environment is available to your other devices through T3 Connect."),
+          )
         : gt("This environment publishes agent activity to your mobile clients."),
     });
     setStep("devices");
@@ -251,7 +254,7 @@ function ConfiguredConnectOnboardingDialog() {
     >
       <WizardPopup>
         <WizardHeader
-          title={gt("Set up T3 Connect")}
+          title={rebrandTextToLunaCode(gt("Set up T3 Connect"))}
           description={
             <T>
               Mesh your devices together. Publish this environment and connect the rest, all in one
@@ -370,8 +373,8 @@ function PublishStep({
       <div className="rounded-lg border">
         <OnboardingToggleRow
           title={gt("Publish this environment")}
-          description={gt(
-            "Make this environment available to your other devices through T3 Connect.",
+          description={rebrandTextToLunaCode(
+            gt("Make this environment available to your other devices through T3 Connect."),
           )}
           checked={exposeEnvironment}
           disabled={disabled}
@@ -389,8 +392,10 @@ function PublishStep({
         {requireDeviceApproval !== null ? (
           <OnboardingToggleRow
             title={gt("Require approval for new devices")}
-            description={gt(
-              "Devices that sign in to your T3 Connect account wait until someone already connected here approves them.",
+            description={rebrandTextToLunaCode(
+              gt(
+                "Devices that sign in to your T3 Connect account wait until someone already connected here approves them.",
+              ),
             )}
             checked={requireDeviceApproval}
             disabled={disabled || requireDeviceApprovalLocked}

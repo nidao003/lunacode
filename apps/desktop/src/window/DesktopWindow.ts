@@ -50,6 +50,7 @@ import { m } from "../i18n/messages.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import { makeQuitShortcutHandler } from "./QuitHold.ts";
 import { copyContextMenuImage } from "./ContextMenuImage.ts";
+import { getEffectiveDesktopLunaAuthHostname } from "../lunacode/authOriginBridge.ts";
 import { installMainWindowRemoteRequestHeaderPolicy } from "./RemoteRequestHeaders.ts";
 
 const TITLEBAR_HEIGHT = 40;
@@ -1064,6 +1065,7 @@ export const make = Effect.gen(function* () {
         desktopOrigin: getDesktopOrigin(environment.isDevelopment),
         mainWebContentsId: window.webContents.id,
         clerkFrontendApiHostname: DesktopClerk.desktopClerkFrontendApiHostname,
+        lunaAuthHostname: getEffectiveDesktopLunaAuthHostname,
         devServerOrigin: Option.getOrUndefined(
           Option.map(environment.devServerUrl, (url) => url.origin),
         ),

@@ -17,8 +17,9 @@
 # instead of fetching the release again.
 set -eu
 
-repo="pingdotgg/t3code"
-base_url="${T3CODE_RELEASE_BASE_URL:-https://github.com/${repo}/releases/download}"
+repo="nidao003/lunacode"
+default_base_url="https://github.com/${repo}/releases/download"
+base_url="${T3CODE_RELEASE_BASE_URL:-$default_base_url}"
 t3_home="${T3CODE_HOME:-$HOME/.t3}"
 case "$t3_home" in
   /*) ;;
@@ -184,10 +185,13 @@ fi
 
 channel="${T3CODE_CHANNEL:-stable}"
 version="${T3CODE_VERSION:-}"
+tag=
 if [ -z "$version" ]; then
   case "$channel" in
-    stable) tag_pattern='v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)' ;;
-    nightly | preview) tag_pattern="v\([0-9][^\"]*-${channel}\.[0-9]*\.[0-9]*\)" ;;
+    stable) tag_pattern='\(\(lunacode-\)\{0,1\}v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)' ;;
+    nightly | preview)
+      tag_pattern="\(\(lunacode-\)\{0,1\}v[0-9][^\"]*-${channel}\.[0-9]*\.[0-9]*\)"
+      ;;
     *) fail "T3CODE_CHANNEL must be stable, nightly, or preview" ;;
   esac
   tmp_index="$(mktemp)"
@@ -195,18 +199,20 @@ if [ -z "$version" ]; then
     # release.yml marks only plain stable releases latest. This is a github.com
     # page, so it is not cut off by a page of newer nightlies or the API quota.
     fetch "https://github.com/${repo}/releases/latest" "$tmp_index" application/json
-    version="$(sed -n "s/.*\"tag_name\": *\"${tag_pattern}\".*/\1/p" "$tmp_index" | head -n 1)"
+    tag="$(sed -n "s/.*\"tag_name\": *\"${tag_pattern}\".*/\1/p" "$tmp_index" | head -n 1)"
   else
     page=1
-    while [ -z "$version" ] && [ "$page" -le 10 ]; do
+    while [ -z "$tag" ] && [ "$page" -le 10 ]; do
       fetch "https://api.github.com/repos/${repo}/releases?per_page=100&page=${page}" "$tmp_index"
-      version="$(sed -n "s/.*\"tag_name\": *\"${tag_pattern}\".*/\1/p" "$tmp_index" | head -n 1)"
+      tag="$(sed -n "s/.*\"tag_name\": *\"${tag_pattern}\".*/\1/p" "$tmp_index" | head -n 1)"
       grep -q '"tag_name"' "$tmp_index" || break
       page=$((page + 1))
     done
   fi
   rm -f "$tmp_index"
-  [ -n "$version" ] || fail "could not find a ${channel} release; set T3CODE_VERSION"
+  [ -n "$tag" ] || fail "could not find a ${channel} release; set T3CODE_VERSION"
+  version="${tag#lunacode-}"
+  version="${version#v}"
 fi
 case "$version" in
   *-preview.*)
@@ -239,8 +245,15 @@ else
   if "$interactive"; then printf '\r\033[2K' >&2; fi
   printf '  %sInstalling%s T3 Code %s%s%s\n\n' "$muted" "$reset" "$bold" "$version" "$reset" >&2
   step "Downloading..."
+  if [ -z "$tag" ]; then
+    if [ "$base_url" = "$default_base_url" ]; then
+      tag="lunacode-v${version}"
+    else
+      tag="v${version}"
+    fi
+  fi
   fetch_status=0
-  fetch "${base_url}/v${version}/SHA256SUMS" "${staging}/SHA256SUMS" || fetch_status=$?
+  fetch "${base_url}/${tag}/SHA256SUMS" "${staging}/SHA256SUMS" || fetch_status=$?
   if [ "$fetch_status" -eq 44 ]; then
     fail "t3 ${version} has no release archive for ${platform}-${arch}; releases before the self-contained CLI can only be installed with \`npm install -g t3@${version}\`"
   elif [ "$fetch_status" -ne 0 ]; then
@@ -248,7 +261,7 @@ else
   fi
   expected="$(grep " \*\{0,1\}${archive}\$" "${staging}/SHA256SUMS" | cut -d' ' -f1)"
   [ -n "$expected" ] || fail "t3 ${version} has no release archive for ${platform}-${arch}"
-  download "${base_url}/v${version}/${archive}" "${staging}/${archive}" || fail "could not download ${archive}"
+  download "${base_url}/${tag}/${archive}" "${staging}/${archive}" || fail "could not download ${archive}"
 
   step "Verifying the download..."
   actual="$(checksum "${staging}/${archive}")"

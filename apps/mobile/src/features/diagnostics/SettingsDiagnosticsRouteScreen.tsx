@@ -7,7 +7,12 @@ import { useAtomValue } from "@effect/atom-react";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { T, useGT } from "gt-react-native";
+import {
+  LUNACODE_CONNECT_NAME,
+  rebrandTextToLunaCode,
+} from "@t3tools/client-runtime/lunacode/brand-display";
+import { T, useGT, useLocale } from "gt-react-native";
+import { DEFAULT_LOCALE } from "../../i18n/locales";
 import { useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -165,6 +170,7 @@ function CrashReportsSetting() {
   // One change at a time, so a slow save never turns sending back on after a later opt-out.
   const [saving, setSaving] = useState(false);
   const gt = useGT();
+  const locale = useLocale();
   const ready = AsyncResult.isSuccess(preferences) && !preferences.waiting;
   const enabled = AsyncResult.isSuccess(preferences)
     ? preferences.value.crashReportsEnabled !== false
@@ -200,11 +206,16 @@ function CrashReportsSetting() {
         />
       </SettingsSection>
       <Text className="px-2 text-sm leading-normal text-foreground-muted">
-        <T>
-          When the app crashes or hits an error, it sends the error message, the stack trace, the
-          app version, and the device model and OS version to the T3 Code team. Each launch also
-          sends startup timings. Reports carry a random ID for this install.
-        </T>
+        {locale === DEFAULT_LOCALE ? (
+          // oxlint-disable-next-line t3code/no-untranslated-copy -- LunaCode English brand override matching <T> sibling
+          "When the app crashes or hits an error, it sends the error message, the stack trace, the app version, and the device model and OS version to the LunaCode team. Each launch also sends startup timings. Reports carry a random ID for this install."
+        ) : (
+          <T>
+            When the app crashes or hits an error, it sends the error message, the stack trace, the
+            app version, and the device model and OS version to the T3 Code team. Each launch also
+            sends startup timings. Reports carry a random ID for this install.
+          </T>
+        )}
       </Text>
     </View>
   );
@@ -218,9 +229,11 @@ function ConnectionTracesSetting() {
         <ConnectionTracesSwitch />
       </SettingsSection>
       <Text className="px-2 text-sm leading-normal text-foreground-muted">
-        {gt(
-          "When the app connects to a computer through {product}, it sends the T3 Code team how long each step took, any error type, an ID for this app session, and the app version. Traces never include your threads, prompts, or code.",
-          { product: "T3 Connect" },
+        {rebrandTextToLunaCode(
+          gt(
+            "When the app connects to a computer through {product}, it sends the T3 Code team how long each step took, any error type, an ID for this app session, and the app version. Traces never include your threads, prompts, or code.",
+            { product: LUNACODE_CONNECT_NAME },
+          ),
         )}
       </Text>
     </View>

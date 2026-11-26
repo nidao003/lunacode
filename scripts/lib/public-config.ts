@@ -4,11 +4,17 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
 
+const DISABLED_CONNECT_VALUES = new Set(["off", "none", "disabled", "false"]);
+
 export interface T3CodePublicConfig {
   readonly clerkPublishableKey: string | undefined;
   readonly clerkJwtTemplate: string | undefined;
   readonly clerkCliOAuthClientId: string | undefined;
+  readonly lunaConnectUrl: string | undefined;
+  readonly lunaAuthUrl: string | undefined;
+  readonly lunaSelfHostedAuthEnabled: boolean;
   readonly relayUrl: string | undefined;
+  readonly hostedAppUrl: string | undefined;
   readonly mobileOtlpTracesUrl: string | undefined;
   readonly mobileOtlpTracesDataset: string | undefined;
   readonly mobileOtlpTracesToken: string | undefined;
@@ -56,10 +62,35 @@ export function loadRepoEnv({
           VITE_CLERK_CLI_OAUTH_CLIENT_ID: config.clerkCliOAuthClientId,
         }
       : {}),
+    ...(config.lunaConnectUrl
+      ? {
+          LUNACODE_CONNECT_URL: config.lunaConnectUrl,
+        }
+      : {}),
+    ...(config.lunaAuthUrl
+      ? {
+          LUNACODE_AUTH_URL: config.lunaAuthUrl,
+          VITE_LUNACODE_AUTH_URL: config.lunaAuthUrl,
+          EXPO_PUBLIC_LUNACODE_AUTH_URL: config.lunaAuthUrl,
+        }
+      : {}),
+    ...(config.lunaSelfHostedAuthEnabled
+      ? {
+          LUNACODE_SELF_HOSTED_AUTH: "1",
+          VITE_LUNACODE_SELF_HOSTED_AUTH: "1",
+          EXPO_PUBLIC_LUNACODE_SELF_HOSTED_AUTH: "1",
+        }
+      : {}),
     ...(config.relayUrl
       ? {
           T3CODE_RELAY_URL: config.relayUrl,
           VITE_T3CODE_RELAY_URL: config.relayUrl,
+        }
+      : {}),
+    ...(config.hostedAppUrl
+      ? {
+          T3CODE_HOSTED_APP_URL: config.hostedAppUrl,
+          VITE_HOSTED_APP_URL: config.hostedAppUrl,
         }
       : {}),
     ...(config.mobileOtlpTracesUrl
@@ -102,13 +133,40 @@ export function loadRepoEnv({
 }
 
 function resolvePublicConfig(...sources: readonly Environment[]): T3CodePublicConfig {
+  const rawConnect = firstNonEmpty(sources, "LUNACODE_CONNECT_URL", "VITE_LUNACODE_CONNECT_URL");
+  const isExplicitlyDisabled =
+    rawConnect !== undefined && DISABLED_CONNECT_VALUES.has(rawConnect.toLowerCase());
+  const explicitLunaConnect = isExplicitlyDisabled ? undefined : rawConnect;
+  const clerkPublishableKey = firstNonEmpty(
+    sources,
+    "T3CODE_CLERK_PUBLISHABLE_KEY",
+    "VITE_CLERK_PUBLISHABLE_KEY",
+    "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY",
+  );
+  const explicitLunaAuth = firstNonEmpty(
+    sources,
+    "LUNACODE_AUTH_URL",
+    "VITE_LUNACODE_AUTH_URL",
+    "EXPO_PUBLIC_LUNACODE_AUTH_URL",
+  );
+  const explicitRelayUrl = firstNonEmpty(sources, "T3CODE_RELAY_URL", "VITE_T3CODE_RELAY_URL");
+  const lunaConnectUrl = explicitLunaConnect;
+  const lunaAuthUrl = explicitLunaAuth ?? lunaConnectUrl;
+  const relayUrl = explicitRelayUrl ?? lunaConnectUrl ?? lunaAuthUrl;
+  const hostedAppUrl =
+    firstNonEmpty(sources, "T3CODE_HOSTED_APP_URL", "VITE_HOSTED_APP_URL") ?? lunaAuthUrl;
+  const rawSelfHosted = firstNonEmpty(
+    sources,
+    "LUNACODE_SELF_HOSTED_AUTH",
+    "VITE_LUNACODE_SELF_HOSTED_AUTH",
+    "EXPO_PUBLIC_LUNACODE_SELF_HOSTED_AUTH",
+  );
+  const lunaSelfHostedAuthEnabled =
+    !isExplicitlyDisabled &&
+    !clerkPublishableKey &&
+    (rawSelfHosted === undefined || !DISABLED_CONNECT_VALUES.has(rawSelfHosted.toLowerCase()));
   return {
-    clerkPublishableKey: firstNonEmpty(
-      sources,
-      "T3CODE_CLERK_PUBLISHABLE_KEY",
-      "VITE_CLERK_PUBLISHABLE_KEY",
-      "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY",
-    ),
+    clerkPublishableKey,
     clerkJwtTemplate: firstNonEmpty(
       sources,
       "T3CODE_CLERK_JWT_TEMPLATE",
@@ -120,7 +178,11 @@ function resolvePublicConfig(...sources: readonly Environment[]): T3CodePublicCo
       "T3CODE_CLERK_CLI_OAUTH_CLIENT_ID",
       "VITE_CLERK_CLI_OAUTH_CLIENT_ID",
     ),
-    relayUrl: firstNonEmpty(sources, "T3CODE_RELAY_URL", "VITE_T3CODE_RELAY_URL"),
+    lunaConnectUrl,
+    lunaAuthUrl,
+    lunaSelfHostedAuthEnabled,
+    relayUrl,
+    hostedAppUrl,
     mobileOtlpTracesUrl: firstNonEmpty(
       sources,
       "T3CODE_MOBILE_OTLP_TRACES_URL",

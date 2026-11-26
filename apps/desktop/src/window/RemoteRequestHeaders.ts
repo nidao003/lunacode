@@ -9,6 +9,7 @@ export interface MainWindowRequestHeaderPolicy {
   readonly desktopOrigin: string;
   readonly mainWebContentsId: number;
   readonly clerkFrontendApiHostname?: string | undefined;
+  readonly lunaAuthHostname?: string | (() => string | undefined) | undefined;
   readonly devServerOrigin?: string | undefined;
   readonly isDevelopment: boolean;
 }
@@ -75,6 +76,13 @@ function shouldPreserveOriginHeader(policy: MainWindowRequestHeaderPolicy, url: 
     policy.clerkFrontendApiHostname !== undefined &&
     hostname === normalizeHostname(policy.clerkFrontendApiHostname)
   ) {
+    return true;
+  }
+  const lunaAuthHostname =
+    typeof policy.lunaAuthHostname === "function"
+      ? policy.lunaAuthHostname()
+      : policy.lunaAuthHostname;
+  if (lunaAuthHostname !== undefined && hostname === normalizeHostname(lunaAuthHostname)) {
     return true;
   }
   if (!policy.isDevelopment) return false;

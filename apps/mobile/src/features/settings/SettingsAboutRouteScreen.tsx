@@ -17,6 +17,7 @@ import {
   registerHiddenUpdateTap,
   runAppUpdateCheck,
 } from "../updates/app-updates";
+import { LunaMobileReleaseUpdateRow } from "../../lunacode/LunaMobileReleaseUpdateRow";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -153,6 +154,7 @@ function AppSettingsSection() {
       ) : (
         versionRow
       )}
+      <LunaMobileReleaseUpdateRow currentVersion={version} />
     </SettingsSection>
   );
 }

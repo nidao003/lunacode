@@ -1,4 +1,5 @@
 import type { AuthClientMetadata, AuthPairingLink } from "@t3tools/contracts";
+import { LUNACODE_CONNECT_NAME } from "@t3tools/client-runtime/lunacode/brand-display";
 import { msg } from "gt-react-native";
 
 import { m } from "../../i18n/messages";
@@ -41,7 +42,7 @@ export function connectDeviceApprovalPrompts(input: {
           {
             device: describeConnectDevice(device),
             environment: input.environmentLabel,
-            product: "T3 Connect",
+            product: LUNACODE_CONNECT_NAME,
             code: verificationCode,
           },
         ),

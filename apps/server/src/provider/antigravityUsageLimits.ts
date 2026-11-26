@@ -325,6 +325,126 @@ export function parseAntigravityAuthEmailFromLog(logText: string): string | unde
   return latest;
 }
 
+const GENERIC_TIER_LABELS = new Set([
+  "google account",
+  "oauth-personal",
+  "consumer",
+  "unspecified",
+  "user tier unspecified",
+  "user_tier_unspecified",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Normalizes upstream `agy` ACP tier IDs and display names into LunaCode subscription plan labels. */
+export function normalizeAntigravitySubscriptionPlan(input: {
+  readonly id?: string | null | undefined;
+  readonly name?: string | null | undefined;
+}): string | undefined {
+  const rawName = typeof input.name === "string" ? input.name.trim() : "";
+  const rawId = typeof input.id === "string" ? input.id.trim() : "";
+  const normalizedId = rawId.toLowerCase().replace(/[\s_]+/g, "-");
+  const normalizedName = rawName.toLowerCase().replace(/\s+/g, " ");
+
+  const ultraMultiplier = /\bai\s+ultra\s+(20x|5x)\b/i.exec(rawName)?.[1]?.toLowerCase();
+  if (ultraMultiplier) {
+    return `AI Ultra ${ultraMultiplier}`;
+  }
+  if (
+    normalizedId === "g1-ultra-tier" ||
+    normalizedId === "g1-ultra-lite-tier" ||
+    normalizedId === "ws-ai-ultra-business-tier" ||
+    normalizedId === "gcp-ge-ultra-tier" ||
+    normalizedId === "ai-ultra" ||
+    normalizedName.includes("ai ultra")
+  ) {
+    return "AI Ultra";
+  }
+  if (
+    normalizedId === "g1-pro-tier" ||
+    normalizedId === "gcp-ge-edu-pro-tier" ||
+    normalizedId === "gcp-ge-edu-pro-emerging-tier" ||
+    normalizedId === "ai-pro" ||
+    normalizedName.includes("ai pro")
+  ) {
+    return "AI Pro";
+  }
+  if (
+    normalizedId === "g1-plus-tier" ||
+    normalizedId === "gcp-ge-plus-tier" ||
+    normalizedId === "ai-plus" ||
+    normalizedName.includes("ai plus")
+  ) {
+    return "AI Plus";
+  }
+  if (
+    normalizedId === "free-tier" ||
+    normalizedId === "free" ||
+    normalizedId === "unlicensed-tier" ||
+    normalizedName === "free" ||
+    normalizedName === "free tier" ||
+    normalizedName === "google ai free" ||
+    normalizedName === "antigravity free"
+  ) {
+    return "Free";
+  }
+  if (rawName && !GENERIC_TIER_LABELS.has(normalizedName)) {
+    return rawName;
+  }
+  switch (normalizedId) {
+    case "standard-tier":
+    case "gcp-standard-tier":
+    case "cs-standard-tier":
+    case "gcp-ge-standard-tier":
+    case "gcp-ge-standard-emerging-tier":
+      return "Standard";
+    case "legacy-tier":
+      return "Legacy";
+    case "enterprise-agent-tier":
+    case "gcp-enterprise-tier":
+      return "Enterprise";
+    case "ge-business-tier":
+    case "ge-business-trial-tier":
+    case "agy-business-paygo-tier":
+    case "gcp-ge-paygo-tier":
+      return "Business";
+    case "gcp-ge-edu-tier":
+    case "gcp-ge-edu-emerging-tier":
+      return "Edu";
+    case "paid-tier":
+    case "paid":
+      return "Paid";
+    default:
+      return undefined;
+  }
+}
+
+/** Extracts normalized subscription plan from ACP `_meta.antigravity.tier` returned by `agy acp`. */
+export function extractAntigravityTierFromMeta(meta: unknown): string | undefined {
+  if (!isRecord(meta) || !isRecord(meta.antigravity)) return undefined;
+  const tier = meta.antigravity.tier;
+  if (typeof tier === "string") {
+    return normalizeAntigravitySubscriptionPlan({ name: tier });
+  }
+  if (!isRecord(tier)) return undefined;
+  return normalizeAntigravitySubscriptionPlan({
+    id: typeof tier.id === "string" ? tier.id : undefined,
+    name: typeof tier.name === "string" ? tier.name : undefined,
+  });
+}
+
+export function extractAntigravityTierFromStartResult(started: {
+  readonly authenticateResult?: { readonly _meta?: unknown } | undefined;
+  readonly sessionSetupResult?: { readonly _meta?: unknown } | undefined;
+}): string | undefined {
+  return (
+    extractAntigravityTierFromMeta(started.sessionSetupResult?._meta) ??
+    extractAntigravityTierFromMeta(started.authenticateResult?._meta)
+  );
+}
+
 async function readHeadUtf8IfRegularFile(filePath: string): Promise<string | undefined> {
   const info = await NodeFSP.lstat(filePath).catch(() => undefined);
   if (!info || info.isSymbolicLink() || !info.isFile()) return undefined;

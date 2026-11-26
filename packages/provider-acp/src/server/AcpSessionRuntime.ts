@@ -1105,6 +1105,7 @@ function isAcpAuthenticationRequired(error: EffectAcpErrors.AcpError): boolean {
 export interface AcpSessionRuntimeStartResult {
   readonly sessionId: string;
   readonly initializeResult: EffectAcpSchema.InitializeResponse;
+  readonly authenticateResult?: EffectAcpSchema.AuthenticateResponse | undefined;
   readonly sessionSetupResult:
     | EffectAcpSchema.ForkSessionResponse
     | EffectAcpSchema.LoadSessionResponse
@@ -1146,7 +1147,9 @@ export class AcpSessionRuntime extends Context.Service<
       EffectAcpSchema.InitializeResponse,
       EffectAcpErrors.AcpError
     >;
-    readonly authenticate?: (methodId: string) => Effect.Effect<void, EffectAcpErrors.AcpError>;
+    readonly authenticate?: (
+      methodId: string,
+    ) => Effect.Effect<EffectAcpSchema.AuthenticateResponse, EffectAcpErrors.AcpError>;
     readonly start: () => Effect.Effect<AcpSessionRuntimeStartResult, EffectAcpErrors.AcpError>;
     readonly getEvents: () => Stream.Stream<AcpSessionRuntimeEvent, never>;
     readonly drainEvents: Effect.Effect<void>;
@@ -2407,7 +2410,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
     const authenticateAfterRequired = Effect.fn("AcpSessionRuntime.authenticateAfterRequired")(
       function* (
         authRequiredError: EffectAcpErrors.AcpError,
-      ): Effect.fn.Return<void, EffectAcpErrors.AcpError> {
+      ): Effect.fn.Return<EffectAcpSchema.AuthenticateResponse, EffectAcpErrors.AcpError> {
         const configuredAuthMethodId = options.authMethodId?.trim();
         const authMethod = selectAcpAgentAuthMethod(
           initializeResult.authMethods,
@@ -2442,7 +2445,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
         const authenticatePayload = {
           methodId: authMethodId,
         } satisfies EffectAcpSchema.AuthenticateRequest;
-        yield* runLoggedRequest(
+        return yield* runLoggedRequest(
           "authenticate",
           authenticatePayload,
           acp.agent.authenticate(authenticatePayload),
@@ -2506,13 +2509,14 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
       return { sessionId, sessionSetupResult };
     });
 
+    let authenticateResult: EffectAcpSchema.AuthenticateResponse | undefined;
     if (options.authenticateEagerly === true) {
       // The configured method is authoritative here: Antigravity accepts
       // methods (API key, Vertex) it does not list in `initialize`.
       const authenticatePayload = {
         methodId: options.authMethodId ?? "",
       } satisfies EffectAcpSchema.AuthenticateRequest;
-      yield* runLoggedRequest(
+      authenticateResult = yield* runLoggedRequest(
         "authenticate",
         authenticatePayload,
         acp.agent.authenticate(authenticatePayload),
@@ -2522,7 +2526,15 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
       Effect.catchIf(
         (error) =>
           !(!isAcpAuthenticationRequired(error) || options.authenticateOnAuthRequired === false),
-        (error) => authenticateAfterRequired(error).pipe(Effect.andThen(setupSession)),
+        (error) =>
+          authenticateAfterRequired(error).pipe(
+            Effect.tap((response) =>
+              Effect.sync(() => {
+                authenticateResult = response;
+              }),
+            ),
+            Effect.andThen(setupSession),
+          ),
       ),
     );
 
@@ -2532,6 +2544,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
     const nextState = {
       sessionId,
       initializeResult,
+      ...(authenticateResult !== undefined ? { authenticateResult } : {}),
       sessionSetupResult,
       modelConfigId: extractModelConfigId(sessionSetupResult),
     } satisfies AcpStartedState;
@@ -2700,7 +2713,6 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
         Effect.andThen(
           runLoggedRequest("authenticate", { methodId }, acp.agent.authenticate({ methodId })),
         ),
-        Effect.asVoid,
       ),
     start: () => start,
     getEvents: () => Stream.fromQueue(eventQueue),

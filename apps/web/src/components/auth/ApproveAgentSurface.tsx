@@ -1,5 +1,9 @@
-import { useAuth, useClerk } from "@clerk/react";
+import { useClerk } from "@clerk/react";
 import { useAtomValue } from "@effect/atom-react";
+
+import { resolveCloudAuthMode } from "../../cloud/publicConfig";
+import { signOutLunaAccount, useCloudAuth } from "../../lunacode/cloudAuth";
+import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
 import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import {
   type ConnectMcpApprovalCall,
@@ -7,6 +11,7 @@ import {
 } from "@t3tools/client-runtime/state/connectMcpApproval";
 import { type AuthMcpApprovalDetails, EnvironmentId } from "@t3tools/contracts";
 import * as Result from "effect/Result";
+import { rebrandTextToLunaCode } from "@t3tools/client-runtime/lunacode/brand-display";
 import * as Schema from "effect/Schema";
 import { msg, T, useGT } from "gt-react";
 import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
@@ -77,6 +82,39 @@ function connectTransport(
  * T3 Connect here and approves with that session, so no sign-in code is needed.
  */
 export function ApproveAgentSurface() {
+  if (resolveCloudAuthMode() === "lunacode") {
+    return <LunaApproveAgentSurface />;
+  }
+  return <ClerkApproveAgentSurface />;
+}
+
+function LunaApproveAgentSurface() {
+  const { openAuthPrompt } = useT3ConnectAuthPrompt();
+  return (
+    <ApproveAgentSurfaceBody
+      openSignIn={openAuthPrompt}
+      onSignOut={() => void signOutLunaAccount()}
+    />
+  );
+}
+
+function ClerkApproveAgentSurface() {
+  const clerk = useClerk();
+  return (
+    <ApproveAgentSurfaceBody
+      openSignIn={() => clerk.openSignIn(resolveClerkSignInProps(window.location.href, isElectron))}
+      onSignOut={() => void clerk.signOut({ redirectUrl: window.location.href })}
+    />
+  );
+}
+
+function ApproveAgentSurfaceBody({
+  openSignIn,
+  onSignOut,
+}: {
+  readonly openSignIn: () => void;
+  readonly onSignOut: () => void;
+}) {
   const gt = useGT();
   const [environmentId] = useState(readEnvironmentId);
   const [authorization] = useState(readAuthorizationRequest);
@@ -89,14 +127,11 @@ export function ApproveAgentSurface() {
   const [transport] = useState(() =>
     environmentId === null ? null : connectTransport(environmentId, setEnvironment),
   );
-  const clerk = useClerk();
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn } = useCloudAuth();
   const loadFailed = useClerkLoadFailed();
   const session = useAtomValue(managedRelaySessionAtom);
   const signInOpened = useRef(false);
 
-  const openSignIn = () =>
-    clerk.openSignIn(resolveClerkSignInProps(window.location.href, isElectron));
   const openSignInOnLoad = useEffectEvent(openSignIn);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens Clerk sign-in once Clerk has loaded and nobody is signed in
@@ -128,7 +163,9 @@ export function ApproveAgentSurface() {
     return (
       <Message
         title={gt("Could not load sign-in")}
-        description={gt("T3 Connect sign-in did not load. Check your connection, then try again.")}
+        description={rebrandTextToLunaCode(
+          gt("T3 Connect sign-in did not load. Check your connection, then try again."),
+        )}
       >
         <div className="mt-6">
           <Button type="button" onClick={retryClerkLoad}>
@@ -144,7 +181,7 @@ export function ApproveAgentSurface() {
       <StandalonePage>
         <StandalonePageHeader
           context={gt("Agent sign-in")}
-          title={gt("Connecting to T3 Connect")}
+          title={rebrandTextToLunaCode(gt("Connecting to T3 Connect"))}
           description={gt("One moment while your account loads.")}
         />
         <Spinner className="mt-6" size="lg" tone="muted" />
@@ -156,7 +193,9 @@ export function ApproveAgentSurface() {
     return (
       <Message
         title={gt("Sign in to approve")}
-        description={gt("Sign in to T3 Connect with the account this environment is linked to.")}
+        description={rebrandTextToLunaCode(
+          gt("Sign in to T3 Connect with the account this environment is linked to."),
+        )}
       >
         <div className="mt-6">
           <Button type="button" onClick={openSignIn}>
@@ -188,12 +227,7 @@ export function ApproveAgentSurface() {
               <T>Use a sign-in code instead</T>
             </Button>
           ) : null}
-          <Button
-            size="sm"
-            variant="link"
-            onClick={() => void clerk.signOut({ redirectUrl: window.location.href })}
-            type="button"
-          >
+          <Button size="sm" variant="link" onClick={onSignOut} type="button">
             <T>Use another account</T>
           </Button>
         </div>

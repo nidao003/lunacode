@@ -1,10 +1,17 @@
 import { findErrorTraceId, thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import {
+  LUNACODE_CONNECT_NAME,
+  rebrandTextToLunaCode,
+} from "@t3tools/client-runtime/lunacode/brand-display";
+import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
+import {
+  isManagedTunnelProviderKind,
+  type RelayClientEnvironmentRecord,
+} from "@t3tools/contracts/relay";
 import { ServerIcon } from "lucide-react";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
 import { useRef, useState } from "react";
@@ -44,7 +51,7 @@ function endpointLabel(
   environment: RelayClientEnvironmentRecord,
   resolve: MessageResolver,
 ): string {
-  return environment.endpoint.providerKind === "cloudflare_tunnel"
+  return isManagedTunnelProviderKind(environment.endpoint.providerKind)
     ? resolve(msg("Managed tunnel"))
     : resolve(msg("Activity publishing only"));
 }
@@ -223,7 +230,9 @@ export function T3ConnectUserProfilePage() {
       toastManager.add({
         type: "success",
         title: gt("Server deregistered"),
-        description: gt("T3 Connect access was revoked and a host space is now available."),
+        description: rebrandTextToLunaCode(
+          gt("T3 Connect access was revoked and a host space is now available."),
+        ),
       });
       return;
     }
@@ -274,7 +283,7 @@ export function T3ConnectUserProfilePage() {
 
   return (
     <ClerkUserProfilePage
-      title="T3 Connect"
+      title={LUNACODE_CONNECT_NAME}
       description={gt(
         "Environments registered to your account. Connections on this device are managed in Settings.",
       )}

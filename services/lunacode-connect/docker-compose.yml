@@ -1,0 +1,61 @@
+services:
+  lunacode-connect:
+    image: ${LUNACODE_CONNECT_IMAGE:-nidao008/lunacode-connect:latest}
+    # To build from source on the server instead of pulling the Docker Hub image, uncomment:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    container_name: lunacode-connect
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "8787"
+      DATA_DIR: /data
+      WEB_DIST_DIR: /app/web-dist
+      TZ: Asia/Shanghai
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://connect.example.com:8443}
+      TUNNEL_BASE_SCHEME: ${TUNNEL_BASE_SCHEME:-https}
+      TUNNEL_PUBLIC_PORT: ${TUNNEL_PUBLIC_PORT:-8443}
+      TUNNEL_WILDCARD_DOMAIN: ${TUNNEL_WILDCARD_DOMAIN:-}
+      TUNNEL_SINGLE_DOMAIN: ${TUNNEL_SINGLE_DOMAIN:-}
+      DEFAULT_USER_MAX_TUNNELS: ${DEFAULT_USER_MAX_TUNNELS:-3}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
+      ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      APNS_KEY_ID: ${APNS_KEY_ID:-}
+      APNS_TEAM_ID: ${APNS_TEAM_ID:-}
+      APNS_BUNDLE_ID: ${APNS_BUNDLE_ID:-com.nidao003.lunacode.mobile}
+      APNS_PRIVATE_KEY_P8: ${APNS_PRIVATE_KEY_P8:-}
+      APNS_PRIVATE_KEY_PATH: ${APNS_PRIVATE_KEY_PATH:-}
+      APNS_USE_SANDBOX: ${APNS_USE_SANDBOX:-false}
+      FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
+      FCM_SERVICE_ACCOUNT_PATH: ${FCM_SERVICE_ACCOUNT_PATH:-}
+    ports:
+      - "${LUNACODE_BIND_HOST:-0.0.0.0}:${LUNACODE_HOST_PORT:-8787}:8787"
+    volumes:
+      # Named volume avoids host directory UID mismatch (image runs as node:1000).
+      # To use a host bind mount instead: mkdir -p ./data && chown -R 1000:1000 ./data
+      # and replace `lunacode_connect_data:/data` with `./data:/data`.
+      - lunacode_connect_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:' + (process.env.PORT || 8787) + '/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  lunacode_connect_data:

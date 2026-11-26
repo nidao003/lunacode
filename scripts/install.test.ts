@@ -80,13 +80,14 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chan
       if (failures-- > 0) return response.writeHead(504).end();
       const url = new URL(request.url ?? "/", "http://fixture");
       const body =
-        url.pathname === "/pingdotgg/t3code/releases/latest" &&
+        url.pathname === "/nidao003/lunacode/releases/latest" &&
         request.headers.accept === "application/json"
-          ? { tag_name: "v1.2.3" }
-          : url.pathname === "/repos/pingdotgg/t3code/releases"
-            ? { "1": nightlies, "2": [{ tag_name: `v${version}` }, { tag_name: "v1.2.3" }] }[
-                url.searchParams.get("page") ?? ""
-              ]
+          ? { tag_name: "lunacode-v1.2.3" }
+          : url.pathname === "/repos/nidao003/lunacode/releases"
+            ? {
+                "1": nightlies,
+                "2": [{ tag_name: `lunacode-v${version}` }, { tag_name: "lunacode-v1.2.3" }],
+              }[url.searchParams.get("page") ?? ""]
             : undefined;
       if (body === undefined) response.statusCode = 404;
       // The API pretty-prints and the installer reads it line by line.

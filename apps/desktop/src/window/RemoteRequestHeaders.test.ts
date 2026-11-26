@@ -80,6 +80,51 @@ describe("RemoteRequestHeaders", () => {
     }
   });
 
+  it("preserves headers for self-hosted lunaAuthHostname while stripping tunnel subdomains and remote hosts", () => {
+    const lunaPolicy: MainWindowRequestHeaderPolicy = {
+      desktopOrigin: "t3code://app",
+      mainWebContentsId: 42,
+      lunaAuthHostname: "connect.example.com",
+      isDevelopment: false,
+    };
+
+    for (const url of [
+      "https://connect.example.com:8443/api/auth/login",
+      "https://CONNECT.EXAMPLE.COM.:8443/v1/client/environments",
+    ]) {
+      assert.isUndefined(
+        stripDesktopOriginHeaders(lunaPolicy, {
+          url,
+          webContentsId: 42,
+          frame: { parent: null },
+          requestHeaders: {
+            Origin: "t3code://app",
+            "Sec-Fetch-Site": "cross-site",
+          },
+        }),
+      );
+    }
+
+    for (const url of [
+      "https://remote.example.com/api/auth/bootstrap",
+      "https://e-abc123.example.com:8443/.well-known/t3/environment",
+    ]) {
+      assert.deepEqual(
+        stripDesktopOriginHeaders(lunaPolicy, {
+          url,
+          webContentsId: 42,
+          frame: { parent: null },
+          requestHeaders: {
+            Origin: "t3code://app",
+            "Sec-Fetch-Site": "cross-site",
+            "Content-Type": "application/json",
+          },
+        }),
+        { "Content-Type": "application/json" },
+      );
+    }
+  });
+
   it("preserves headers for dev loopback and exact devServerOrigin, while stripping other ports and remote hosts", () => {
     for (const url of [
       "http://localhost:3773/api/health",
@@ -181,6 +226,46 @@ describe("RemoteRequestHeaders", () => {
           "Sec-Fetch-Site": "cross-site",
         },
       }),
+    );
+  });
+
+  it("evaluates dynamic lunaAuthHostname getter when switching backend URL at runtime", () => {
+    let activeHostname: string | undefined = "connect.example.com";
+    const dynamicPolicy: MainWindowRequestHeaderPolicy = {
+      desktopOrigin: "t3code://app",
+      mainWebContentsId: 42,
+      lunaAuthHostname: () => activeHostname,
+      isDevelopment: false,
+    };
+
+    assert.isUndefined(
+      stripDesktopOriginHeaders(dynamicPolicy, {
+        url: "https://connect.example.com:8443/api/auth/login",
+        webContentsId: 42,
+        frame: { parent: null },
+        requestHeaders: { Origin: "t3code://app", "Content-Type": "application/json" },
+      }),
+    );
+
+    activeHostname = "alt.example.com";
+
+    assert.isUndefined(
+      stripDesktopOriginHeaders(dynamicPolicy, {
+        url: "https://alt.example.com:9443/api/auth/login",
+        webContentsId: 42,
+        frame: { parent: null },
+        requestHeaders: { Origin: "t3code://app", "Content-Type": "application/json" },
+      }),
+    );
+
+    assert.deepEqual(
+      stripDesktopOriginHeaders(dynamicPolicy, {
+        url: "https://connect.example.com:8443/api/auth/login",
+        webContentsId: 42,
+        frame: { parent: null },
+        requestHeaders: { Origin: "t3code://app", "Content-Type": "application/json" },
+      }),
+      { "Content-Type": "application/json" },
     );
   });
 });

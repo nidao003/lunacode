@@ -260,6 +260,7 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
     }
   });
   return {
+    instanceId,
     instance,
     refresh,
     makeExecutable,
@@ -701,6 +702,62 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
         );
         expect(yield* fs.exists(directories.runtimeTemp)).toBe(false);
         expect(yield* fs.exists(legacyRoot)).toBe(false);
+      }),
+  );
+
+  it.effect.skipIf(windowsHost)(
+    "captures ACP subscription tier metadata, promotes auth.label, and hydrates across restarts",
+    () =>
+      Effect.gen(function* () {
+        const tierJson = JSON.stringify({ id: "g1-pro-tier", name: "Google AI Pro" });
+        const harness = yield* makeHarness({
+          environment: [{ name: "T3_ACP_ANTIGRAVITY_TIER_JSON", value: tierJson }],
+        });
+        const acpDir = harness.path.join(harness.profileDirectory, "antigravity-acp");
+        const logDir = harness.path.join(acpDir, "log");
+        yield* harness.fs.makeDirectory(logDir, { recursive: true });
+        yield* harness.fs.writeFileString(
+          harness.path.join(acpDir, "antigravity-oauth-token"),
+          "{}",
+        );
+        yield* harness.fs.writeFileString(
+          harness.path.join(logDir, "acp-server-1.log"),
+          "INFO applyAuthResult: email=pro@example.com, authMethod=consumer, quotaProject=\n",
+        );
+
+        yield* harness.refresh();
+        const afterSession = yield* harness.instance.snapshot.getSnapshot;
+        expect(afterSession.auth).toMatchObject({
+          status: "authenticated",
+          type: "oauth-personal",
+          email: "pro@example.com",
+          label: "AI Pro",
+        });
+
+        // A fresh driver instance hydrates the persisted subscription tier on check without spawning ACP.
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const restarted = yield* AntigravityDriver.create({
+          instanceId: harness.instanceId,
+          displayName: "Google test account",
+          enabled: true,
+          config: AntigravityDriver.defaultConfig(),
+          environment: [],
+        }).pipe(
+          Effect.provide(
+            Layer.mock(AntigravityInstallation.AntigravityInstallation)({
+              managedDirectory: harness.directories.profile,
+              resolve: () => Effect.succeed(harness.first),
+              acquire: () => Effect.die("unused"),
+            }),
+          ),
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        );
+        yield* restarted.snapshot.refresh;
+        const afterRestart = yield* restarted.snapshot.getSnapshot;
+        expect(afterRestart.auth).toMatchObject({
+          email: "pro@example.com",
+          label: "AI Pro",
+        });
       }),
   );
 });

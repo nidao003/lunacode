@@ -1,4 +1,5 @@
 import type { RelayAgentActivityAggregateState } from "@t3tools/contracts/relay";
+import { LUNACODE_CONNECT_NAME } from "@t3tools/client-runtime/lunacode/brand-display";
 import { msg } from "gt-react-native";
 
 import { m, type MessageResolver } from "../i18n/messages";
@@ -76,9 +77,9 @@ export function agentActivityWidgetTimeline(
       title: "LunaCode",
       subtitle:
         source.kind === "signed-out"
-          ? resolve(msg("Sign in to {product} to see agents", { product: "T3 Connect" }))
+          ? resolve(msg("Sign in to {product} to see agents", { product: LUNACODE_CONNECT_NAME }))
           : source.kind === "unavailable"
-            ? resolve(msg("Couldn't reach {product}", { product: "T3 Connect" }))
+            ? resolve(msg("Couldn't reach {product}", { product: LUNACODE_CONNECT_NAME }))
             : source.kind === "loading"
               ? resolve(msg("Loading agents…"))
               : resolve(msg("No active agents")),

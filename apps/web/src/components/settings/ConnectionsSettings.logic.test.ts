@@ -258,12 +258,12 @@ describe("endpointDefaultPreferenceKey", () => {
 
   it("maps .local mDNS and custom LAN endpoints to distinct preference keys", () => {
     const mdns = makeEndpoint(
-      "desktop-lan-mdns:http://daodao-2.local:3773/",
-      "http://daodao-2.local:3773/",
+      "desktop-lan-mdns:http://workstation.local:3773/",
+      "http://workstation.local:3773/",
     );
     const custom = makeEndpoint(
-      "desktop-lan-custom:http://daodao-2.local:8000/",
-      "http://daodao-2.local:8000/",
+      "desktop-lan-custom:http://workstation.local:8000/",
+      "http://workstation.local:8000/",
     );
     const ip = makeEndpoint("desktop-lan:http://192.168.1.20:3773", "http://192.168.1.20:3773/");
 

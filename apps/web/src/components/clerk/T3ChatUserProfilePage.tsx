@@ -1,4 +1,8 @@
 import { T3CHAT_PLAN_TUNNEL_LIMITS, type RelayT3ChatLink } from "@t3tools/contracts/relay";
+import {
+  LUNACODE_CHAT_NAME,
+  rebrandTextToLunaCode,
+} from "@t3tools/client-runtime/lunacode/brand-display";
 import { MessageSquareIcon } from "lucide-react";
 import { T, useGT, Var } from "gt-react";
 import type { ReactNode } from "react";
@@ -64,10 +68,12 @@ export function T3ChatUserProfilePage() {
 
   return (
     <ClerkUserProfilePage
-      title="T3 Chat"
-      description={gt(
-        "Link a paid T3 Chat account for more T3 Connect tunnels: up to {pro} with Pro, {premier} with Premier.",
-        { pro: T3CHAT_PLAN_TUNNEL_LIMITS.pro, premier: T3CHAT_PLAN_TUNNEL_LIMITS.premier },
+      title={LUNACODE_CHAT_NAME}
+      description={rebrandTextToLunaCode(
+        gt(
+          "Link a paid T3 Chat account for more T3 Connect tunnels: up to {pro} with Pro, {premier} with Premier.",
+          { pro: T3CHAT_PLAN_TUNNEL_LIMITS.pro, premier: T3CHAT_PLAN_TUNNEL_LIMITS.premier },
+        ),
       )}
       action={
         <ClerkUserProfileRefreshButton

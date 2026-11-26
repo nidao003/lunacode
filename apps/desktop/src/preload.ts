@@ -31,7 +31,23 @@ function isSnapShotEvent(value: unknown): value is DesktopSnapShotEvent {
   );
 }
 
-exposeClerkBridge({ passkeys: true });
+declare const __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: string | undefined;
+declare const __T3CODE_BUILD_LUNACODE_AUTH_URL__: string | undefined;
+declare const __T3CODE_BUILD_LUNACODE_SELF_HOSTED_AUTH__: string | undefined;
+
+const useSelfHostedLunaAuth =
+  ((typeof __T3CODE_BUILD_LUNACODE_SELF_HOSTED_AUTH__ === "string" &&
+    __T3CODE_BUILD_LUNACODE_SELF_HOSTED_AUTH__ === "1") ||
+    (typeof __T3CODE_BUILD_LUNACODE_AUTH_URL__ === "string" &&
+      __T3CODE_BUILD_LUNACODE_AUTH_URL__.trim().length > 0)) &&
+  !(
+    typeof __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__ === "string" &&
+    __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__.trim().length > 0
+  );
+
+if (!useSelfHostedLunaAuth) {
+  exposeClerkBridge({ passkeys: true });
+}
 
 // Runs before any app script reads localStorage. See DesktopLegacyLocalStorage.
 try {
@@ -577,4 +593,5 @@ contextBridge.exposeInMainWorld("desktopBridge", {
 contextBridge.exposeInMainWorld("lunaDesktopBridge", {
   getRtkStatus: () => ipcRenderer.invoke("luna:rtk-get-status"),
   initRtkGlobal: () => ipcRenderer.invoke("luna:rtk-init-global"),
+  setLunaAuthUrl: (url: string | null) => ipcRenderer.invoke("luna:set-auth-url", url),
 });

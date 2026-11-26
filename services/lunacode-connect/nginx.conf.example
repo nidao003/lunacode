@@ -1,0 +1,33 @@
+# Example Nginx reverse proxy configuration for HTTPS on non-443 port (connect.example.com:8443 + *.example.com:8443).
+# Forward everything (HTTP + WebSocket + /_tunnel/connect + wildcard tunnels + /t/<slug>/) to 127.0.0.1:8787.
+# IMPORTANT: Pass `$http_host` (NOT `$host`) so `:8443` stays intact for DPoP, OAuth, and wildcard tunnel routing.
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 8443 ssl http2;
+    listen [::]:8443 ssl http2;
+    server_name connect.example.com *.example.com;
+
+    ssl_certificate     /etc/ssl/lunacode/fullchain.pem;
+    ssl_certificate_key /etc/ssl/lunacode/privkey.pem;
+
+    client_max_body_size 50m;
+
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}

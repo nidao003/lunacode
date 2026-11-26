@@ -16,6 +16,7 @@ import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import type { PeerLinkHealth } from "@t3tools/client-runtime/state/peerLinks";
 import { AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import { LUNACODE_CONNECT_NAME } from "@t3tools/client-runtime/lunacode/brand-display";
 import * as Option from "effect/Option";
 import { useGT, useMessages } from "gt-react";
 import {
@@ -205,7 +206,7 @@ const ROUTE_STYLES: Record<
 function routeKindLabel(kind: ConnectionRouteKind, gt: GT): string {
   switch (kind) {
     case "relay":
-      return "T3 Connect";
+      return LUNACODE_CONNECT_NAME;
     case "loopback":
       return gt("This device");
     case "lan":

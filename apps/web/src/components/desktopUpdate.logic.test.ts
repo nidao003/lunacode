@@ -153,16 +153,25 @@ describe("desktop update button state", () => {
 
 describe("desktop update UI helpers", () => {
   it.each(["owner/repo/extra", "owner#notes/repo", "owner/repo?tab=notes"])(
-    "falls back to upstream for an invalid configured repository: %s",
+    "falls back to nidao003/lunacode for an invalid configured repository: %s",
     (repository) => {
       expect(getDesktopUpdateReleaseHistoryUrl(repository)).toBe(
-        "https://github.com/pingdotgg/t3code/releases",
+        "https://github.com/nidao003/lunacode/releases",
       );
       expect(getDesktopUpdateReleaseUrl("1.2.3", repository)).toBe(
-        "https://github.com/pingdotgg/t3code/releases/tag/v1.2.3",
+        "https://github.com/nidao003/lunacode/releases/tag/lunacode-v1.2.3",
       );
     },
   );
+
+  it("uses v-prefixed release tags when overridden to an explicit custom repository", () => {
+    expect(getDesktopUpdateReleaseHistoryUrl("acme/custom-t3")).toBe(
+      "https://github.com/acme/custom-t3/releases",
+    );
+    expect(getDesktopUpdateReleaseUrl("1.2.3", "acme/custom-t3")).toBe(
+      "https://github.com/acme/custom-t3/releases/tag/v1.2.3",
+    );
+  });
 });
 
 describe("canCheckForUpdate", () => {

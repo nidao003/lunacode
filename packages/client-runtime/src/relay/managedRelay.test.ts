@@ -455,4 +455,45 @@ describe("ManagedRelayClient", () => {
       }
     }).pipe(Effect.provide(layerManagedRelayTest(fetchFn)));
   });
+
+  it.effect(
+    "reads a dynamic relayUrl getter per request so switching backend works without rebuilding layer",
+    () => {
+      let activeRelayUrl = "https://relay-a.example.test";
+      const requestedUrls: Array<string> = [];
+      const fetchFn = ((input) => {
+        requestedUrls.push(String(input));
+        return Promise.resolve(Response.json({ environments: [] }));
+      }) satisfies typeof globalThis.fetch;
+
+      const layerHttpClient = RpcHttp.layerRemoteHttpClient(fetchFn);
+      const layerSigner = Layer.succeed(
+        ManagedRelay.ManagedRelayDpopSigner,
+        ManagedRelay.ManagedRelayDpopSigner.of({
+          thumbprint: Effect.succeed("client-thumbprint"),
+          createProof: (input: ManagedRelay.ManagedRelayDpopProofInput) =>
+            Effect.succeed(`proof:${input.url}`),
+        }),
+      );
+      const dynamicLayer = ManagedRelay.layer({
+        relayUrl: () => activeRelayUrl,
+        clientId: "t3-web",
+      }).pipe(Layer.provide(layerSigner), Layer.provide(layerHttpClient));
+
+      return Effect.gen(function* () {
+        const relayClient = yield* ManagedRelay.ManagedRelayClient;
+        yield* relayClient.listEnvironments({ clerkToken: "token-a" });
+        expect(relayClient.relayUrl).toBe("https://relay-a.example.test");
+
+        activeRelayUrl = "https://relay-b.example.test";
+        yield* relayClient.listEnvironments({ clerkToken: "token-b" });
+        expect(relayClient.relayUrl).toBe("https://relay-b.example.test");
+
+        expect(requestedUrls).toEqual([
+          "https://relay-a.example.test/v1/environments",
+          "https://relay-b.example.test/v1/environments",
+        ]);
+      }).pipe(Effect.provide(dynamicLayer));
+    },
+  );
 });

@@ -157,7 +157,7 @@ describe("multiAccount.logic", () => {
           driver: "antigravity",
           displayName: "Antigravity",
           authStatus: "unknown",
-          email: "tiwarisammer66@gmail.com",
+          email: "alpha@example.com",
           authLabel: "Google account",
           version: "1.5.13",
         }),
@@ -182,7 +182,7 @@ describe("multiAccount.logic", () => {
     const ag2 = summaries.find((s) => String(s.instanceId) === "ag_2");
     const claude = summaries.find((s) => String(s.instanceId) === "claudeAgent");
 
-    assert.equal(ag1?.accountEmail, "tiwarisammer66@gmail.com");
+    assert.equal(ag1?.accountEmail, "alpha@example.com");
     assert.equal(ag1?.authTypeLabel, "Google account");
     assert.equal(ag1?.authStateKind, "saved-pending");
     assert.equal(ag1?.versionLabel, "v1.5.13");
@@ -197,10 +197,10 @@ describe("multiAccount.logic", () => {
     assert.equal(claude?.authStateKind, "authenticated");
     assert.isFalse(claude?.hasDuplicateDisplayName);
 
-    assert.equal(maskAccountEmail("tiwarisammer66@gmail.com"), "tiw***@gmail.com");
-    assert.equal(maskAccountEmail("496474460@qq.com"), "496***@qq.com");
+    assert.equal(maskAccountEmail("alpha@example.com"), "alp***@example.com");
+    assert.equal(maskAccountEmail("devuser@example.org"), "dev***@example.org");
     // Kimi Code labels accounts by nickname, which has no address to hide.
-    assert.equal(maskAccountEmail("daodao"), "daodao");
+    assert.equal(maskAccountEmail("test-user"), "test-user");
   });
 
   it("extracts compact quota badges from provider usageLimits", () => {
@@ -212,7 +212,7 @@ describe("multiAccount.logic", () => {
           id: "antigravity",
           driver: "antigravity",
           displayName: "Antigravity",
-          email: "tiwarisammer66@gmail.com",
+          email: "alpha@example.com",
           usageLimits: {
             checkedAt: "2026-11-21T11:55:00.000Z",
             windows: [

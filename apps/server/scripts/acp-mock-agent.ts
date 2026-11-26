@@ -89,6 +89,12 @@ const newSessionErrorData =
     : Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))(
         process.env.T3_ACP_NEW_SESSION_ERROR_DATA,
       );
+const antigravityTier =
+  process.env.T3_ACP_ANTIGRAVITY_TIER_JSON === undefined
+    ? undefined
+    : Schema.decodeSync(Schema.fromJsonString(Schema.Json))(
+        process.env.T3_ACP_ANTIGRAVITY_TIER_JSON,
+      );
 const failPromptOrdinal = Number(process.env.T3_ACP_FAIL_PROMPT_ORDINAL);
 const compactionPromptOrdinals = new Set(
   (process.env.T3_ACP_COMPACTION_PROMPT_ORDINALS ?? "").split(",").map(Number),
@@ -606,7 +612,9 @@ const program = Effect.gen(function* () {
         );
       }
       authenticated = true;
-      return {};
+      return antigravityTier === undefined
+        ? {}
+        : { _meta: { antigravity: { tier: antigravityTier } } };
     }),
   );
   if (antigravityProfile) {
@@ -650,6 +658,9 @@ const program = Effect.gen(function* () {
       return {
         sessionId,
         configOptions: configOptions(),
+        ...(antigravityTier === undefined
+          ? {}
+          : { _meta: { antigravity: { tier: antigravityTier } } }),
       };
     }),
   );

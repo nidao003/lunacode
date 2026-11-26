@@ -5,6 +5,7 @@ import * as Result from "effect/Result";
 
 import {
   hostedAppUrlConfig,
+  isLunaCloudAuthConfiguredConfig,
   makeCloudCliOAuthConfig,
   makeRelayUrlConfig,
   resolveRelayClientTracingConfig,
@@ -80,3 +81,26 @@ it("product opt-out disables relay tracing with either built-in or runtime crede
     null,
   );
 });
+
+it.effect("uses LUNACODE_CONNECT_URL for hosted auth, relay, and CLI OAuth when configured", () =>
+  Effect.gen(function* () {
+    const connectEnv = { LUNACODE_CONNECT_URL: "https://connect.example.test" };
+    assert.equal(yield* isLunaCloudAuthConfiguredConfig.pipe(provideEnv(connectEnv)), true);
+    assert.equal(
+      yield* hostedAppUrlConfig.pipe(provideEnv(connectEnv)),
+      "https://connect.example.test",
+    );
+    assert.equal(
+      yield* makeRelayUrlConfig("").pipe(provideEnv(connectEnv)),
+      "https://connect.example.test",
+    );
+    assert.deepEqual(yield* makeCloudCliOAuthConfig().pipe(provideEnv(connectEnv)), {
+      tokenEndpoint: "https://connect.example.test/oauth/token",
+      deviceAuthorizationEndpoint: "https://connect.example.test/oauth/device/code",
+      clientId: "lunacode-cli",
+      loopbackPort: 34338,
+      redirectUri: "http://127.0.0.1:34338/callback",
+      scopes: ["openid", "profile", "email", "offline_access"],
+    });
+  }),
+);

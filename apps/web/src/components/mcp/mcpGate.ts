@@ -3,7 +3,7 @@ import type {
   EnvironmentConnectReachability,
 } from "@t3tools/contracts";
 import type { Discovery } from "@t3tools/client-runtime/relay";
-import type { RelayManagedEndpoint } from "@t3tools/contracts/relay";
+import { isManagedTunnelProviderKind, type RelayManagedEndpoint } from "@t3tools/contracts/relay";
 
 import { msg } from "gt-react";
 
@@ -63,7 +63,7 @@ export function resolveMcpGate(
     if (input.thisMachine) return { kind: "disconnected", relay: null };
     // T3 Connect checks only its own tunnels; a publish-only link's check always fails.
     const availability =
-      relay.status === "listed" && relay.endpoint?.providerKind === "cloudflare_tunnel"
+      relay.status === "listed" && isManagedTunnelProviderKind(relay.endpoint?.providerKind)
         ? relay.availability
         : undefined;
     // A refresh empties the list first, so wait for it instead of flashing "Connect first".

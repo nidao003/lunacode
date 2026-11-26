@@ -79,6 +79,8 @@ import { makeAntigravityProvider } from "../AntigravityProvider.ts";
 import { makeAntigravityQuotaCache } from "../antigravityQuotaCache.ts";
 import {
   ANTIGRAVITY_USAGE_COOLDOWN_MESSAGE,
+  extractAntigravityTierFromMeta,
+  extractAntigravityTierFromStartResult,
   makeAntigravityUsageProbe,
   readAntigravityProfileAccountInfo,
 } from "../antigravityUsageLimits.ts";
@@ -552,6 +554,7 @@ export const AntigravityDriver: ProviderDriver<
         "getEvents" | "drainEvents" | "setModel"
       >,
     ) {
+      yield* Effect.suspend(() => recordSessionTier(started));
       yield* provider.onSessionStarted(started);
       yield* authFlow.onSignedInElsewhere;
       yield* Stream.runForEach(runtime.getEvents(), (event) => {
@@ -632,6 +635,23 @@ export const AntigravityDriver: ProviderDriver<
       yield* digest.digest(Digest.sha256, new TextEncoder().encode(`agy-cooldown\0${instanceId}`)),
     );
     const discoveredEmailRef = yield* Ref.make<string | undefined>(undefined);
+    const discoveredPlanRef = yield* Ref.make<string | undefined>(undefined);
+    const updateDiscoveredEmail = Effect.fn("AntigravityDriver.updateDiscoveredEmail")(function* (
+      email: string | undefined,
+    ) {
+      const normalized = email?.trim().toLowerCase();
+      if (!normalized) return;
+      const previous = yield* Ref.getAndSet(discoveredEmailRef, email!.trim());
+      if (previous && previous.trim().toLowerCase() !== normalized) {
+        yield* Ref.set(discoveredPlanRef, undefined);
+      }
+    });
+    // Keep last good quota on disk so an offline/expired manual refresh still surfaces the last
+    // known bars flagged as cached instead of leaving the card blank.
+    const quotaCache = yield* makeAntigravityQuotaCache({
+      stateDir: host.paths.stateDir,
+      instanceId,
+    });
     const resolveAccountInfo = Effect.gen(function* () {
       if (auth.authMethod !== "oauth-personal") {
         return undefined;
@@ -644,20 +664,58 @@ export const AntigravityDriver: ProviderDriver<
       );
       if (!info.hasToken) {
         yield* Ref.set(discoveredEmailRef, undefined);
+        yield* Ref.set(discoveredPlanRef, undefined);
         return { hasToken: false } as const;
       }
       const cachedEmail = yield* Ref.get(discoveredEmailRef);
       const email = info.email ?? cachedEmail;
       if (info.email) {
-        yield* Ref.set(discoveredEmailRef, info.email);
+        yield* updateDiscoveredEmail(info.email);
+      }
+      const cachedPlan = yield* Ref.get(discoveredPlanRef);
+      const plan = cachedPlan ?? (yield* quotaCache.readPlan(email));
+      if (plan && !cachedPlan) {
+        yield* Ref.set(discoveredPlanRef, plan);
       }
       return {
         hasToken: true,
         ...(email ? { email } : {}),
+        ...(plan ? { label: plan } : {}),
       } as const;
     });
     const currentAccountEmail = resolveAccountInfo.pipe(
       Effect.map((info) => (info?.hasToken ? info.email : undefined)),
+    );
+    const recordSessionTier = Effect.fn("AntigravityDriver.recordSessionTier")(function* (
+      started: AcpSessionRuntime.AcpSessionRuntimeStartResult,
+    ) {
+      if (auth.authMethod !== "oauth-personal") return;
+      const plan = extractAntigravityTierFromStartResult(started);
+      if (!plan) return;
+      yield* Ref.set(discoveredPlanRef, plan);
+      const email = yield* currentAccountEmail;
+      yield* quotaCache.persistPlan(email, plan);
+    });
+    const probeSubscriptionPlan = Effect.gen(function* () {
+      const processScope = yield* Scope.make();
+      yield* Effect.addFinalizer((exit) => Scope.close(processScope, exit));
+      return yield* authFlow
+        .withProcess(
+          Scope.close(processScope, Exit.void),
+          Effect.gen(function* () {
+            const runtime = yield* makeDisposableRuntime({});
+            const response = yield* runtime.authenticate?.(auth.authMethod) ?? Effect.undefined;
+            return extractAntigravityTierFromMeta(response?._meta);
+          }),
+        )
+        .pipe(Effect.provideService(Scope.Scope, processScope));
+    }).pipe(
+      Effect.scoped,
+      Effect.timeoutOrElse({
+        duration: "20 seconds",
+        orElse: () => Effect.void.pipe(Effect.as(undefined)),
+      }),
+      Effect.orElseSucceed(() => undefined),
     );
     const usage = yield* makeAntigravityUsageProbe({
       profileDirectory,
@@ -674,18 +732,12 @@ export const AntigravityDriver: ProviderDriver<
         "agy-quota-cache",
         `${usageCooldownKey}.json`,
       ),
-      onAccountEmail: (email) => Ref.set(discoveredEmailRef, email),
+      onAccountEmail: updateDiscoveredEmail,
     }).pipe(
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, path),
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
     );
-    // Keep last good quota on disk so an offline/expired manual refresh still surfaces the last
-    // known bars flagged as cached instead of leaving the card blank.
-    const quotaCache = yield* makeAntigravityQuotaCache({
-      stateDir: host.paths.stateDir,
-      instanceId,
-    });
     const probeUsage = Effect.gen(function* () {
       const probed = yield* usage.probe;
       const email = yield* currentAccountEmail;
@@ -694,7 +746,15 @@ export const AntigravityDriver: ProviderDriver<
         return cached ?? probed;
       }
       if (probed.unavailable) return yield* quotaCache.recover(probed, email);
-      yield* quotaCache.persist(probed, email, undefined);
+      const cachedPlan = (yield* Ref.get(discoveredPlanRef)) ?? (yield* quotaCache.readPlan(email));
+      const probedPlan =
+        !cachedPlan && auth.authMethod === "oauth-personal"
+          ? yield* probeSubscriptionPlan
+          : undefined;
+      if (probedPlan) {
+        yield* Ref.set(discoveredPlanRef, probedPlan);
+      }
+      yield* quotaCache.persist(probed, email, cachedPlan ?? probedPlan);
       return probed;
     });
     const provider = yield* makeAntigravityProvider(settings, {
@@ -719,6 +779,7 @@ export const AntigravityDriver: ProviderDriver<
       clearUsage: usage.clear.pipe(
         Effect.andThen(quotaCache.clear()),
         Effect.andThen(Ref.set(discoveredEmailRef, undefined)),
+        Effect.andThen(Ref.set(discoveredPlanRef, undefined)),
       ),
       maintenanceCapabilities,
       auth: { type: auth.authMethod, label: antigravityAuthLabel(auth.authMethod) },
@@ -756,7 +817,10 @@ export const AntigravityDriver: ProviderDriver<
       profileDirectory,
       authMethod: auth.authMethod,
       onSessionStarted: (started, cwd) =>
-        provider.onSessionStarted(started, cwd).pipe(Effect.andThen(authFlow.onSignedInElsewhere)),
+        recordSessionTier(started).pipe(
+          Effect.andThen(provider.onSessionStarted(started, cwd)),
+          Effect.andThen(authFlow.onSignedInElsewhere),
+        ),
       onSessionEvent: (event, cwd) => {
         if (event._tag === "ConfigOptionsUpdated") {
           return provider.onConfigOptionsUpdated(event.configOptions);

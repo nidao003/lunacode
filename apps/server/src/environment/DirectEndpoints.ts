@@ -168,6 +168,41 @@ const probeCloudMetadata = Effect.callback<boolean>((resume) => {
   return Effect.sync(() => socket.destroy());
 });
 
+function resolveMdnsLocalHostLabel(hostname: string): string | null {
+  const trimmed = hostname.trim().replace(/\.+$/u, "");
+  const bare = trimmed.toLowerCase().endsWith(".local")
+    ? trimmed.slice(0, -".local".length)
+    : trimmed;
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/iu.test(bare) ? bare.toLowerCase() : null;
+}
+
+export function appendMdnsLanEndpoint(
+  endpoints: ReadonlyArray<ServerDirectEndpoint>,
+  input: {
+    readonly host: string | undefined;
+    readonly port: number;
+    readonly hostname: string;
+    readonly onCloudVm: boolean;
+  },
+): Array<ServerDirectEndpoint> {
+  if (
+    !isWildcardHost(input.host) ||
+    input.onCloudVm ||
+    !endpoints.some((entry) => entry.kind === "lan")
+  ) {
+    return [...endpoints];
+  }
+  const localLabel = resolveMdnsLocalHostLabel(input.hostname);
+  if (localLabel === null) {
+    return [...endpoints];
+  }
+  const mdnsUrl = `http://${localLabel}.local:${input.port}/`;
+  if (endpoints.some((entry) => entry.httpBaseUrl === mdnsUrl)) {
+    return [...endpoints];
+  }
+  return [...endpoints, { kind: "lan", httpBaseUrl: mdnsUrl }];
+}
+
 /** @public */
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
@@ -193,19 +228,25 @@ export const make = Effect.gen(function* () {
             Effect.provideService(FileSystem.FileSystem, fileSystem),
           )
         : undefined;
+    const onCloudVmValue = yield* onCloudVm;
     const endpoints = [
       ...resolveBoundEndpoints({
         platform,
         host: config.host,
         port: config.port,
         interfaces,
-        onCloudVm: yield* onCloudVm,
+        onCloudVm: onCloudVmValue,
         ...(isolatedBridges === undefined ? {} : { isolatedBridges }),
       }),
     ];
     const servedUrl = yield* Ref.get(servedEndpoint);
     if (Option.isSome(servedUrl)) endpoints.push({ kind: "tailnet", httpBaseUrl: servedUrl.value });
-    return endpoints;
+    return appendMdnsLanEndpoint(endpoints, {
+      host: config.host,
+      port: config.port,
+      hostname: NodeOS.hostname(),
+      onCloudVm: onCloudVmValue,
+    });
   });
 
   const resolve = Effect.gen(function* () {

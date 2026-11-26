@@ -52,4 +52,7 @@ node_modules/
 # pnpm content-addressable store; never belongs in the repo.
 .pnpm-store/
 
+services/lunacode-connect/web-dist/*
+!services/lunacode-connect/web-dist/.gitkeep
+
 /packages/ssh/.ssh-launcher-test-*/

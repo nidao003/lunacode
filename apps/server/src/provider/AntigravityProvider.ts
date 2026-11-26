@@ -43,6 +43,7 @@ import {
 import { resolveUsageLimitsAfterProbe } from "@t3tools/provider-core/server/usageLimits";
 
 import { antigravityThinkingConfig } from "./acp/AntigravityAcpSupport.ts";
+import { extractAntigravityTierFromStartResult } from "./antigravityUsageLimits.ts";
 
 const EMPTY_MODEL_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
 const MAX_WORKSPACE_SNAPSHOTS = 32;
@@ -280,16 +281,30 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       usageRead,
       options.probeUsage.pipe(
         Effect.flatMap((probed) =>
-          SubscriptionRef.update(metadata, (state) => ({
-            ...state,
-            draft: {
-              ...state.draft,
-              usageLimits: resolveUsageLimitsAfterProbe({
-                published: state.draft.usageLimits,
-                probed,
-              }),
-            },
-          })),
+          Effect.gen(function* () {
+            const accountInfo = options.readAccountInfo
+              ? yield* options.readAccountInfo.pipe(Effect.orElseSucceed(() => undefined))
+              : undefined;
+            yield* SubscriptionRef.update(metadata, (state) => {
+              const nextEmail = accountInfo?.email ?? state.draft.auth.email;
+              const nextLabel = accountInfo?.label ?? state.draft.auth.label;
+              return {
+                ...state,
+                draft: {
+                  ...state.draft,
+                  auth: {
+                    ...state.draft.auth,
+                    ...(nextLabel ? { label: nextLabel } : {}),
+                    ...(nextEmail ? { email: nextEmail } : {}),
+                  },
+                  usageLimits: resolveUsageLimitsAfterProbe({
+                    published: state.draft.usageLimits,
+                    probed,
+                  }),
+                },
+              };
+            });
+          }),
         ),
         // Enrichment cannot change published limits; a health check publishes them. Running it
         // inline (not forked) means the read fiber finishing implies the fresh limits are published,
@@ -522,6 +537,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
         state.draft.auth.status !== "unauthenticated" ? state.draft.auth.label : undefined;
       const preservedEmail =
         state.draft.auth.status !== "unauthenticated" ? state.draft.auth.email : undefined;
+      const sessionTierLabel = extractAntigravityTierFromStartResult(started);
       const nextEmail = accountInfo?.email ?? preservedEmail;
       const next = {
         authRevision: state.authRevision + 1,
@@ -533,7 +549,12 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
           auth: {
             status: "authenticated",
             type: options.auth?.type ?? "oauth-personal",
-            label: accountInfo?.label ?? preservedLabel ?? options.auth?.label ?? "Google account",
+            label:
+              accountInfo?.label ??
+              sessionTierLabel ??
+              preservedLabel ??
+              options.auth?.label ??
+              "Google account",
             ...(nextEmail ? { email: nextEmail } : {}),
           },
           checkedAt: updatedAt,

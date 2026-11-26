@@ -21,6 +21,7 @@ import {
   presentThreadShellFromProjection,
 } from "./ChatView.logic";
 import { deriveLunaContextTelemetry } from "../lunacode/contextTelemetry";
+import { composerOwnsPendingApprovals } from "../lunacode/approvalPresentation";
 import { buildDeterministicHandoff } from "../lunacode/handoffBuilder";
 import { usePullRequestDraftThread } from "./chat/usePullRequestDraftThread";
 import { usePullRequestLinking } from "../hooks/usePullRequestLinking";
@@ -172,6 +173,7 @@ import {
   deriveCanInterruptRunningThread,
   findRevertCheckpoint,
   isLatestRunSettled,
+  type PendingApproval,
 } from "../session-logic";
 import { type LegendListRef } from "@legendapp/list/react";
 import { useWorkspaceRevision } from "../hooks/useWorkspaceRevision";
@@ -438,6 +440,7 @@ const EMPTY_TURN_ITEMS: ThreadStructure["turnItems"] = [];
 const EMPTY_RUNS: ThreadStructure["runs"] = [];
 const EMPTY_AUTO_UPDATE_ENVIRONMENTS: ReadonlyArray<EnvironmentPresentation> = [];
 const EMPTY_COMPOSER_BANNER_ITEMS: ReadonlyArray<ComposerBannerStackItem> = [];
+const EMPTY_PENDING_APPROVALS: ReadonlyArray<PendingApproval> = [];
 
 const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 
@@ -1905,6 +1908,12 @@ export default function ChatView(props: ChatViewProps) {
   // Provider-native subagents cannot take messages; approvals and questions go to the top-level parent.
   const showProviderSubagentBar = isProviderSubagent;
   const composerMounted = !showProviderSubagentBar;
+  const timelinePendingApprovals = composerOwnsPendingApprovals({
+    composerMounted,
+    hasPendingUserInputs: pendingUserInputs.length > 0,
+  })
+    ? EMPTY_PENDING_APPROVALS
+    : pendingApprovals;
   const providerSubagentModels = selectedProviderEntry?.models ?? EMPTY_PROVIDER_MODELS;
   // Providers can report dated model ids or aliases.
   const providerSubagentModelSlug = selectedProviderEntry
@@ -3691,7 +3700,7 @@ export default function ChatView(props: ChatViewProps) {
             >
               <WorkspaceMutationIdContext value={workspaceMutationId}>
                 <ThreadTimeline
-                  pendingApprovals={pendingApprovals}
+                  pendingApprovals={timelinePendingApprovals}
                   heldApprovalRequestIds={heldApprovalRequestIds}
                   respondingRequestIds={respondingRequestIds}
                   onRespondToApproval={onRespondToApprovalStable}
@@ -3973,6 +3982,7 @@ export default function ChatView(props: ChatViewProps) {
                                 environmentUnavailable={activeEnvironmentUnavailableState}
                                 activePendingApproval={activePendingApproval}
                                 pendingApprovals={pendingApprovals}
+                                onRespondToApproval={onRespondToApprovalStable}
                                 onHeldRequestIdsChange={onHeldRequestIdsChange}
                                 pendingUserInputs={pendingUserInputs}
                                 activePendingIsResponding={activePendingIsResponding}

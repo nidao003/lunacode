@@ -5,6 +5,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import * as DateTime from "effect/DateTime";
+import { rebrandTextToLunaCode } from "@t3tools/client-runtime/lunacode/brand-display";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
 import { useState } from "react";
 
@@ -65,7 +66,7 @@ export function ConnectDeviceApprovalSettings({
   };
 
   return (
-    <SettingsSection id="connect-devices" title={gt("T3 Connect devices")}>
+    <SettingsSection id="connect-devices" title={rebrandTextToLunaCode(gt("T3 Connect devices"))}>
       {requests.map((request) => {
         const connectRequest = request.connectDeviceRequest;
         if (!connectRequest) return null;

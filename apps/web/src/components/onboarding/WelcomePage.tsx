@@ -1,5 +1,5 @@
-import { useAuth } from "@clerk/react";
 import { useAtomValue } from "@effect/atom-react";
+import { useCloudAuth } from "../../lunacode/cloudAuth";
 import type {
   AgentSessionProjectCandidate,
   EnvironmentId,
@@ -38,6 +38,12 @@ import {
   TerminalIcon,
 } from "lucide-react";
 import { msg, T, useGT, useLocale, useMessages, Var } from "gt-react";
+import {
+  LUNACODE_BRAND_NAME,
+  LUNACODE_CONNECT_NAME,
+  rebrandTextToLunaCode,
+} from "@t3tools/client-runtime/lunacode/brand-display";
+import { DEFAULT_LOCALE } from "../../i18n/locales";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
@@ -980,6 +986,7 @@ function ProjectsSection({
 
 function PhoneSection({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const gt = useGT();
+  const locale = useLocale();
   const [open, setOpen] = useState(false);
   return (
     <WelcomeSection title={gt("Phone")}>
@@ -989,7 +996,12 @@ function PhoneSection({ environmentId }: { readonly environmentId: EnvironmentId
             <SmartphoneIcon className="size-4" />
           </RowIcon>
           <span className="min-w-0 flex-1 text-sm font-medium text-foreground">
-            <T>Use T3 Code on your phone</T>
+            {locale === DEFAULT_LOCALE ? (
+              // oxlint-disable-next-line t3code/no-untranslated-copy -- LunaCode English brand override matching <T> sibling
+              `Use ${LUNACODE_BRAND_NAME} on your phone`
+            ) : (
+              <T>Use T3 Code on your phone</T>
+            )}
           </span>
           <CollapsibleTrigger render={<Button variant="ghost-muted" size="xs" />}>
             {open ? gt("Hide") : gt("Set up")}
@@ -1015,7 +1027,7 @@ function PhoneSection({ environmentId }: { readonly environmentId: EnvironmentId
                 size={124}
                 level="M"
                 marginSize={2}
-                title={gt("T3 Code app for iPhone and Android")}
+                title={rebrandTextToLunaCode(gt("T3 Code app for iPhone and Android"))}
               />
             </div>
           </div>
@@ -1035,8 +1047,9 @@ function PhoneStep({ step, children }: { readonly step: number; readonly childre
 }
 
 function PhoneConnectLink({ environmentId }: { readonly environmentId: EnvironmentId }) {
-  const { isLoaded, isSignedIn, userId } = useAuth({ treatPendingAsSignedOut: false });
+  const { isLoaded, isSignedIn, userId } = useCloudAuth({ treatPendingAsSignedOut: false });
   const gt = useGT();
+  const locale = useLocale();
   const loadFailed = useClerkLoadFailed();
   const { openAuthPrompt } = useT3ConnectAuthPrompt();
   const linkState = useCloudLinkState(environmentId);
@@ -1065,7 +1078,12 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
   if (isSignedIn && link === null && linkState.isPending) {
     return (
       <p className="text-sm text-muted-foreground">
-        <T>Checking T3 Connect…</T>
+        {locale === DEFAULT_LOCALE ? (
+          // oxlint-disable-next-line t3code/no-untranslated-copy -- LunaCode English brand override matching <T> sibling
+          `Checking ${LUNACODE_CONNECT_NAME}…`
+        ) : (
+          <T>Checking T3 Connect…</T>
+        )}
       </p>
     );
   }
@@ -1073,9 +1091,14 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
     return (
       <>
         <p className="text-sm text-foreground">
-          <T>Could not check T3 Connect.</T>
+          {locale === DEFAULT_LOCALE ? (
+            // oxlint-disable-next-line t3code/no-untranslated-copy -- LunaCode English brand override matching <T> sibling
+            `Could not check ${LUNACODE_CONNECT_NAME}.`
+          ) : (
+            <T>Could not check T3 Connect.</T>
+          )}
         </p>
-        {settingsLink(gt("Check T3 Connect"))}
+        {settingsLink(rebrandTextToLunaCode(gt("Check T3 Connect")))}
       </>
     );
   }
@@ -1090,7 +1113,12 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
   if (isSignedIn && shared && reachability === undefined) {
     return (
       <p className="text-sm text-foreground">
-        <T>T3 Connect is on for this computer. Sign in to the app with the same account.</T>
+        {locale === DEFAULT_LOCALE ? (
+          // oxlint-disable-next-line t3code/no-untranslated-copy -- LunaCode English brand override matching <T> sibling
+          `${LUNACODE_CONNECT_NAME} is on for this computer. Sign in to the app with the same account.`
+        ) : (
+          <T>T3 Connect is on for this computer. Sign in to the app with the same account.</T>
+        )}
       </p>
     );
   }
@@ -1100,17 +1128,26 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
       <>
         <p className="text-sm text-foreground">
           {shared
-            ? gt("T3 Connect is on, but the app cannot reach this computer.")
+            ? rebrandTextToLunaCode(gt("T3 Connect is on, but the app cannot reach this computer."))
             : gt("Signed in. Share this computer so the app can reach it.")}
         </p>
-        {settingsLink(shared ? gt("Check T3 Connect") : gt("Set up T3 Connect"))}
+        {settingsLink(
+          shared
+            ? rebrandTextToLunaCode(gt("Check T3 Connect"))
+            : rebrandTextToLunaCode(gt("Set up T3 Connect")),
+        )}
       </>
     );
   }
   return (
     <>
       <p className="text-sm text-foreground">
-        <T>Sign in to T3 Connect here, then in the app with the same account.</T>
+        {locale === DEFAULT_LOCALE ? (
+          // oxlint-disable-next-line t3code/no-untranslated-copy -- LunaCode English brand override matching <T> sibling
+          `Sign in to ${LUNACODE_CONNECT_NAME} here, then in the app with the same account.`
+        ) : (
+          <T>Sign in to T3 Connect here, then in the app with the same account.</T>
+        )}
       </p>
       {loadFailed ? (
         <Button variant="outline" size="xs" onClick={retryClerkLoad}>
@@ -1118,7 +1155,12 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
         </Button>
       ) : (
         <Button variant="outline" size="xs" disabled={!isLoaded} onClick={openAuthPrompt}>
-          <T>Sign in to T3 Connect</T>
+          {locale === DEFAULT_LOCALE ? (
+            // oxlint-disable-next-line t3code/no-untranslated-copy -- LunaCode English brand override matching <T> sibling
+            `Sign in to ${LUNACODE_CONNECT_NAME}`
+          ) : (
+            <T>Sign in to T3 Connect</T>
+          )}
         </Button>
       )}
     </>

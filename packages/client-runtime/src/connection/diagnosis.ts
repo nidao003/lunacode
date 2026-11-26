@@ -13,6 +13,7 @@ import type {
 } from "./model.ts";
 import { mFallback, msg } from "gt-i18n";
 import type { MFunctionType } from "gt-i18n/types";
+import { LUNACODE_CONNECT_NAME } from "../lunacode/brandDisplay.ts";
 
 export type ConnectionHopResult = "ok" | "failed" | "unchecked";
 
@@ -356,7 +357,7 @@ function helpSection(
   }
 }
 
-const T3_CONNECT_NAME = "T3 Connect";
+const T3_CONNECT_NAME = LUNACODE_CONNECT_NAME;
 
 const HOP_ORDER = {
   relay: ["device", "relay", "tunnel", "server"],
@@ -429,7 +430,7 @@ export function presentConnectionDiagnosis(
   );
   add(
     resolve(msg("Route", { $context: "diagnostics field label" })),
-    relayPath ? "T3 Connect" : resolve(msg("Direct", { $context: "connection route" })),
+    relayPath ? LUNACODE_CONNECT_NAME : resolve(msg("Direct", { $context: "connection route" })),
   );
   add(resolve(msg("App version")), input.clientVersion);
   add(resolve(msg("Host version")), input.serverVersion);

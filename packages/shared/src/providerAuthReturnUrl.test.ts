@@ -18,4 +18,22 @@ describe("provider auth return destinations", () => {
     "t3code://app/welcome/../evil",
     "https://attacker.example/welcome",
   ])("rejects %s", (url) => expect(providerAuthReturnUrl(url)).toBeUndefined());
+
+  it("allows configured self-hosted LUNACODE_CONNECT_URL origins", () => {
+    const prev = process.env.LUNACODE_CONNECT_URL;
+    process.env.LUNACODE_CONNECT_URL = "https://connect.example.com:8443";
+    try {
+      expect(
+        providerAuthReturnUrl(
+          "https://connect.example.com:8443/welcome?code=secret#agents:machine-id",
+        ),
+      ).toBe("https://connect.example.com:8443/welcome#agents:machine-id");
+    } finally {
+      if (prev === undefined) {
+        delete process.env.LUNACODE_CONNECT_URL;
+      } else {
+        process.env.LUNACODE_CONNECT_URL = prev;
+      }
+    }
+  });
 });

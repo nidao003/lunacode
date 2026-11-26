@@ -1,4 +1,5 @@
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
+import { LUNACODE_CONNECT_NAME } from "@t3tools/client-runtime/lunacode/brand-display";
 import { msg, T, useGT, useMessages } from "gt-react-native";
 import { findErrorTraceId } from "@t3tools/client-runtime/errors";
 import {
@@ -7,7 +8,10 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type { MenuAction } from "@react-native-menu/menu";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
+import {
+  isManagedTunnelProviderKind,
+  type RelayClientEnvironmentRecord,
+} from "@t3tools/contracts/relay";
 import { type ReactNode, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { RefreshControl } from "../../components/ui/RefreshControl";
@@ -38,7 +42,7 @@ function endpointLabel(
   environment: RelayClientEnvironmentRecord,
   resolve: MessageResolver,
 ): string {
-  return environment.endpoint.providerKind === "cloudflare_tunnel"
+  return isManagedTunnelProviderKind(environment.endpoint.providerKind)
     ? resolve(msg("Managed tunnel"))
     : resolve(msg("Activity publishing only"));
 }
@@ -48,7 +52,7 @@ function confirmDeregister(environment: RelayClientEnvironmentRecord, onConfirm:
   const message = m(
     msg(
       "“{environment}” will be removed from this account. {product} access will be revoked, any managed tunnel will be removed, and a host space will become available. Local connections on your devices are not changed.",
-      { environment: environment.label, product: "T3 Connect" },
+      { environment: environment.label, product: LUNACODE_CONNECT_NAME },
     ),
   );
   Dialog.confirm({
@@ -168,7 +172,7 @@ export function T3ConnectProfilePage() {
       {environmentsState.error ? (
         <>
           <ClerkRow
-            title={gt("Could not load {product} environments", { product: "T3 Connect" })}
+            title={gt("Could not load {product} environments", { product: LUNACODE_CONNECT_NAME })}
             subtitle={environmentsState.error}
           />
           {errorTraceId ? (
@@ -235,7 +239,7 @@ export function T3ConnectProfilePage() {
         <ClerkRow
           title={gt("No servers registered")}
           subtitle={gt("Link a server from its local Settings to reach it through {product}.", {
-            product: "T3 Connect",
+            product: LUNACODE_CONNECT_NAME,
           })}
         />
       )}

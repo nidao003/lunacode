@@ -5,7 +5,7 @@ import "@fontsource-variable/inter";
 import "./index.css";
 
 import { trackKeyboardLayout } from "./keyboardLayout";
-import { hasCloudPublicConfig } from "./cloud/publicConfig";
+import { hasCloudPublicConfig, resolveCloudAuthMode } from "./cloud/publicConfig";
 import { isElectron } from "./env";
 import { startAppServices } from "./appInit";
 import { AppRoot } from "./AppRoot";
@@ -17,17 +17,20 @@ import.meta.hot?.dispose(stopTrackingKeyboardLayout);
 
 const router = startAppServices();
 
+const authMode = resolveCloudAuthMode();
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
 
 const app = <AppRoot router={router} />;
 
 // Split by runtime to keep Clerk out of local startup and clerk-js out of browser builds.
 const managedAuthShellModule =
-  clerkPublishableKey && hasCloudPublicConfig()
-    ? isElectron
-      ? import("./components/clerk/ElectronManagedAuthShell")
-      : import("./components/clerk/BrowserManagedAuthShell")
-    : null;
+  authMode === "lunacode"
+    ? import("./lunacode/LunaManagedAuthShell")
+    : authMode === "clerk" && clerkPublishableKey && hasCloudPublicConfig()
+      ? isElectron
+        ? import("./components/clerk/ElectronManagedAuthShell")
+        : import("./components/clerk/BrowserManagedAuthShell")
+      : null;
 
 export const startup = Promise.all([
   managedAuthShellModule?.then((module) => module.default) ?? null,
@@ -39,8 +42,8 @@ export const startup = Promise.all([
     if (chunkLoadState.reloadScheduled) return;
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <React.StrictMode>
-        {ManagedAuthShell && clerkPublishableKey ? (
-          <ManagedAuthShell publishableKey={clerkPublishableKey}>{app}</ManagedAuthShell>
+        {ManagedAuthShell && (authMode === "lunacode" || clerkPublishableKey) ? (
+          <ManagedAuthShell publishableKey={clerkPublishableKey ?? ""}>{app}</ManagedAuthShell>
         ) : (
           app
         )}

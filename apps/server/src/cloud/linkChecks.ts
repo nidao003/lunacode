@@ -1,8 +1,9 @@
-import type {
-  RelayEnvironmentLinkProofPayload,
-  RelayLinkProofRequest,
-  RelayManagedEndpointOrigin,
-  RelayManagedEndpointRuntimeConfig,
+import {
+  isManagedTunnelProviderKind,
+  type RelayEnvironmentLinkProofPayload,
+  type RelayLinkProofRequest,
+  type RelayManagedEndpointOrigin,
+  type RelayManagedEndpointRuntimeConfig,
 } from "@t3tools/contracts/relay";
 
 const CLOUD_PROOF_MAX_LIFETIME_SECONDS = 5 * 60;
@@ -57,7 +58,7 @@ export function isLoopbackEndpointOrigin(origin: RelayManagedEndpointOrigin): bo
 
 export function isSupportedLinkProviderKind(request: RelayLinkProofRequest): boolean {
   return (
-    request.endpoint.providerKind === "cloudflare_tunnel" ||
+    isManagedTunnelProviderKind(request.endpoint.providerKind) ||
     request.endpoint.providerKind === "manual"
   );
 }
@@ -65,7 +66,7 @@ export function isSupportedLinkProviderKind(request: RelayLinkProofRequest): boo
 export function linkProofScopes(
   request: RelayLinkProofRequest,
 ): RelayEnvironmentLinkProofPayload["scopes"] {
-  return request.endpoint.providerKind === "cloudflare_tunnel"
+  return isManagedTunnelProviderKind(request.endpoint.providerKind)
     ? ["agent_activity_notifications", "managed_tunnels"]
     : ["agent_activity_notifications"];
 }

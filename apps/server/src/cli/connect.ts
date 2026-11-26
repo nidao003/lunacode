@@ -44,7 +44,7 @@ import {
   RELAY_ENVIRONMENT_CREDENTIAL_SECRET,
   RELAY_URL_SECRET,
 } from "../cloud/config.ts";
-import { relayUrlConfig } from "../cloud/publicConfig.ts";
+import { isLunaCloudAuthConfiguredConfig, relayUrlConfig } from "../cloud/publicConfig.ts";
 import * as RelayTracing from "../cloud/relayTracing.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -578,7 +578,8 @@ const linkEnvironmentForConnect = Effect.fn("cloud.cli.link_environment")(functi
   readonly installRelayClient?: boolean;
 }) {
   const publishOnly = options.publishOnly ?? false;
-  if (!publishOnly) {
+  const isLunaAuth = yield* isLunaCloudAuthConfiguredConfig.pipe(Effect.orElseSucceed(() => false));
+  if (!publishOnly && !isLunaAuth) {
     const relayClient = yield* RelayClient.RelayClient;
     const installed = yield* acquireRelayClientForLink(
       relayClient,

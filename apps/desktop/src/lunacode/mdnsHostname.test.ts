@@ -35,8 +35,8 @@ function mockSpawner(stdoutText: string, exitCode = 0) {
 
 describe("normalizeMdnsHostname", () => {
   it("normalizes single labels and .local hostnames while rejecting invalid inputs", () => {
-    assert.equal(normalizeMdnsHostname("daodao-2"), "daodao-2.local");
-    assert.equal(normalizeMdnsHostname("  DaoDao-2.Local.  "), "daodao-2.local");
+    assert.equal(normalizeMdnsHostname("mac-studio"), "mac-studio.local");
+    assert.equal(normalizeMdnsHostname("  Mac-Studio.Local.  "), "mac-studio.local");
     assert.equal(normalizeMdnsHostname("localhost"), null);
     assert.equal(normalizeMdnsHostname("192.168.1.20"), null);
     assert.equal(normalizeMdnsHostname("::1"), null);
@@ -51,9 +51,9 @@ describe("readLocalMdnsHostname", () => {
     readLocalMdnsHostname.pipe(
       Effect.provideService(HostProcess.Platform, "darwin"),
       Effect.provideService(HostProcess.Hostname, "ignored.corp.example"),
-      Effect.provide(mockSpawner("daodao-2\n", 0)),
+      Effect.provide(mockSpawner("mac-studio\n", 0)),
       Effect.map((hostname) => {
-        assert.equal(hostname, "daodao-2.local");
+        assert.equal(hostname, "mac-studio.local");
       }),
     ),
   );

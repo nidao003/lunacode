@@ -40,7 +40,7 @@ Useful flags:
    ```bash
    defaults read com.apple.dt.Xcode IDEProvisioningTeamByIdentifier
    ```
-   (Look for e.g. `teamID = AA7ZZ89F8B`, `isFreeProvisioningTeam = 1`.)
+   (Look for e.g. `teamID = <YOUR_TEAM_ID>`, `isFreeProvisioningTeam = 1`.)
 2. Bootstrap a temporary macOS C tool in `/tmp/lunacode-cert-bootstrap` so Xcode requests/installs the `Apple Development` certificate into `login.keychain-db`:
    ```bash
    rm -rf /tmp/lunacode-cert-bootstrap && mkdir -p /tmp/lunacode-cert-bootstrap/CertBootstrap.xcodeproj
@@ -61,9 +61,9 @@ Useful flags:
        111111111111111111110005 = {isa = PBXGroup; children = (111111111111111111110003); name = Products; sourceTree = "<group>"; };
        111111111111111111110006 = {isa = PBXNativeTarget; buildConfigurationList = 111111111111111111110007; buildPhases = (111111111111111111110008); buildRules = (); dependencies = (); name = CertBootstrap; productName = CertBootstrap; productReference = 111111111111111111110003; productType = "com.apple.product-type.tool"; };
        111111111111111111110008 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (111111111111111111110001); runOnlyForDeploymentPostprocessing = 0; };
-       111111111111111111110009 = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = 1; LastUpgradeCheck = 1500; TargetAttributes = {111111111111111111110006 = {CreatedOnToolsVersion = 15.0; DevelopmentTeam = AA7ZZ89F8B; ProvisioningStyle = Automatic; }; }; }; buildConfigurationList = 111111111111111111110010; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; mainGroup = 111111111111111111110004; productRefGroup = 111111111111111111110005; targets = (111111111111111111110006); };
+       111111111111111111110009 = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = 1; LastUpgradeCheck = 1500; TargetAttributes = {111111111111111111110006 = {CreatedOnToolsVersion = 15.0; DevelopmentTeam = <YOUR_TEAM_ID>; ProvisioningStyle = Automatic; }; }; }; buildConfigurationList = 111111111111111111110010; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; mainGroup = 111111111111111111110004; productRefGroup = 111111111111111111110005; targets = (111111111111111111110006); };
        111111111111111111110011 = {isa = XCBuildConfiguration; buildSettings = {MACOSX_DEPLOYMENT_TARGET = 13.0; SDKROOT = macosx; }; name = Debug; };
-       111111111111111111110012 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_IDENTITY = "Apple Development"; CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = AA7ZZ89F8B; PRODUCT_BUNDLE_IDENTIFIER = com.nidao003.lunacode.certbootstrap; PRODUCT_NAME = "$(TARGET_NAME)"; }; name = Debug; };
+       111111111111111111110012 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_IDENTITY = "Apple Development"; CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = <YOUR_TEAM_ID>; PRODUCT_BUNDLE_IDENTIFIER = com.nidao003.lunacode.certbootstrap; PRODUCT_NAME = "$(TARGET_NAME)"; }; name = Debug; };
        111111111111111111110010 = {isa = XCConfigurationList; buildConfigurations = (111111111111111111110011); defaultConfigurationName = Debug; };
        111111111111111111110007 = {isa = XCConfigurationList; buildConfigurations = (111111111111111111110012); defaultConfigurationName = Debug; };
      };
@@ -74,7 +74,7 @@ Useful flags:
    rm -rf /tmp/lunacode-cert-bootstrap
    security find-identity -v -p codesigning
    ```
-   (Replace `AA7ZZ89F8B` with the user's `teamID` if it changed. If Apple session/2FA expired, open Xcode Settings -> Accounts to re-authenticate instead of scripting logins.)
+   (Replace `<YOUR_TEAM_ID>` with your Xcode `teamID` from step 1. If Apple session/2FA expired, open Xcode Settings -> Accounts to re-authenticate instead of scripting logins.)
 
 ## 4. Known pitfalls
 

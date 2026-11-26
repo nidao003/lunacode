@@ -10,7 +10,7 @@ const layerRelayDpopSigner = DpopProof.layerSigner({
   loadOrCreateKey: loadOrCreateProofKey(),
 });
 
-export const layer = (relayUrl: string) =>
+export const layer = (relayUrl: string | (() => string)) =>
   ManagedRelay.layer({
     relayUrl,
     clientId: RelayMobileClientId,

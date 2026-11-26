@@ -272,6 +272,8 @@ function rpcSocketUrl(wsBaseUrl: string): URL {
   const url = new URL(wsBaseUrl);
   if (url.pathname === "" || url.pathname === "/") {
     url.pathname = "/ws";
+  } else if (url.pathname.endsWith("/")) {
+    url.pathname = `${url.pathname}ws`;
   }
   return url;
 }

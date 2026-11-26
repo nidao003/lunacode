@@ -16,7 +16,10 @@ import { describe, expect } from "vite-plus/test";
 import {
   ANTIGRAVITY_CLI_USAGE_COOLDOWN_MS,
   buildAntigravityCliUsageEnv,
+  extractAntigravityTierFromMeta,
+  extractAntigravityTierFromStartResult,
   makeAntigravityUsageProbe,
+  normalizeAntigravitySubscriptionPlan,
   parseAntigravityAuthEmailFromLog,
   parseAntigravityCliUsageOutput,
   readAntigravityProfileAccountEmail,
@@ -712,4 +715,57 @@ it.layer(NodeServices.layer)("makeAntigravityUsageProbe", (it) => {
         ).toBe("alice@example.com");
       }).pipe(Effect.scoped),
   );
+});
+
+describe("Antigravity subscription tier extraction", () => {
+  it("normalizes official agy UserTier IDs and display names into LunaCode plan labels", () => {
+    expect(normalizeAntigravitySubscriptionPlan({ id: "g1-pro-tier", name: "Google AI Pro" })).toBe(
+      "AI Pro",
+    );
+    expect(
+      normalizeAntigravitySubscriptionPlan({ id: "G1_ULTRA_TIER", name: "Google AI Ultra" }),
+    ).toBe("AI Ultra");
+    expect(
+      normalizeAntigravitySubscriptionPlan({ id: "g1-ultra-tier", name: "Google AI Ultra 20x" }),
+    ).toBe("AI Ultra 20x");
+    expect(
+      normalizeAntigravitySubscriptionPlan({ id: "G1_PLUS_TIER", name: "Google AI Plus" }),
+    ).toBe("AI Plus");
+    expect(normalizeAntigravitySubscriptionPlan({ id: "free-tier", name: "Free" })).toBe("Free");
+    expect(normalizeAntigravitySubscriptionPlan({ id: "FREE_TIER" })).toBe("Free");
+    expect(normalizeAntigravitySubscriptionPlan({ id: "standard-tier" })).toBe("Standard");
+    expect(normalizeAntigravitySubscriptionPlan({ id: "enterprise-agent-tier" })).toBe(
+      "Enterprise",
+    );
+    expect(normalizeAntigravitySubscriptionPlan({ name: "Google account" })).toBeUndefined();
+  });
+
+  it("extracts subscription tier from ACP sessionSetupResult and authenticateResult metadata", () => {
+    expect(
+      extractAntigravityTierFromMeta({
+        antigravity: {
+          tier: { id: "g1-pro-tier", name: "Google AI Pro", upgradeUri: "https://example.test" },
+        },
+      }),
+    ).toBe("AI Pro");
+    expect(
+      extractAntigravityTierFromStartResult({
+        authenticateResult: {
+          _meta: { antigravity: { tier: { id: "g1-ultra-tier", name: "Google AI Ultra" } } },
+        },
+        sessionSetupResult: {},
+      }),
+    ).toBe("AI Ultra");
+    expect(
+      extractAntigravityTierFromStartResult({
+        authenticateResult: {
+          _meta: { antigravity: { tier: { id: "free-tier", name: "Free" } } },
+        },
+        sessionSetupResult: {
+          _meta: { antigravity: { tier: { id: "g1-pro-tier", name: "Google AI Pro" } } },
+        },
+      }),
+    ).toBe("AI Pro");
+    expect(extractAntigravityTierFromMeta({ antigravity: {} })).toBeUndefined();
+  });
 });

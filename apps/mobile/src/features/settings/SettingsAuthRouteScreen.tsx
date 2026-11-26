@@ -1,4 +1,5 @@
 import { useAuth } from "@clerk/expo";
+import { LUNACODE_CONNECT_NAME } from "@t3tools/client-runtime/lunacode/brand-display";
 import {
   AuthView,
   type UserProfileCustomPage,
@@ -8,13 +9,14 @@ import { useNavigation } from "@react-navigation/native";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 
-import { hasCloudPublicConfig } from "../cloud/publicConfig";
+import { LunaMobileAuthScreen } from "../../lunacode/LunaMobileAuthScreen";
+import { hasCloudPublicConfig, resolveCloudAuthMode } from "../cloud/publicConfig";
 import { T3ConnectProfilePage } from "../cloud/T3ConnectProfilePage";
 
 const USER_PROFILE_CUSTOM_PAGES = [
   {
     path: "t3-connect",
-    label: "T3 Connect",
+    label: LUNACODE_CONNECT_NAME,
     icon: "globe",
     content: <T3ConnectProfilePage />,
   },
@@ -22,7 +24,11 @@ const USER_PROFILE_CUSTOM_PAGES = [
 
 // Without cloud config the app has no entry point here and appLinking drops the deep link.
 export function SettingsAuthRouteScreen() {
-  return hasCloudPublicConfig() ? <ConfiguredSettingsAuthRouteScreen /> : null;
+  if (!hasCloudPublicConfig()) return null;
+  if (resolveCloudAuthMode() === "lunacode") {
+    return <LunaMobileAuthScreen />;
+  }
+  return <ConfiguredSettingsAuthRouteScreen />;
 }
 
 function ConfiguredSettingsAuthRouteScreen() {

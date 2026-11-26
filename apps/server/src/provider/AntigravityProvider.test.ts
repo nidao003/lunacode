@@ -1098,4 +1098,66 @@ it.layer(makeLayerTest(true))("Antigravity periodic health checks", (it) => {
       expect(auth.at(-1)).toBe("unauthenticated");
     }),
   );
+
+  it.effect(
+    "promotes subscription tier from session start and manual usage refresh onto auth.label",
+    () =>
+      Effect.gen(function* () {
+        const accountInfo = yield* Ref.make<
+          | {
+              readonly hasToken: boolean;
+              readonly email?: string | undefined;
+              readonly label?: string | undefined;
+            }
+          | undefined
+        >({ hasToken: true, email: "alice@example.com" });
+        const harness = yield* makeHarness({
+          auth: { type: "oauth-personal", label: "Google account" },
+          readAccountInfo: Ref.get(accountInfo),
+          readCachedUsage: Effect.undefined,
+          probeUsage: Ref.set(accountInfo, {
+            hasToken: true,
+            email: "alice@example.com",
+            label: "AI Ultra",
+          }).pipe(
+            Effect.as({
+              checkedAt: "2026-10-09T12:05:00.000Z",
+              windows: [
+                { id: "gemini-5h", kind: "session", label: "Gemini · 5-hour", usedPercent: 5 },
+              ],
+            }),
+          ),
+        });
+        yield* harness.initialize;
+        expect((yield* harness.provider.snapshot.getSnapshot).auth.label).toBeUndefined();
+
+        yield* harness.provider.onSessionStarted(
+          {
+            ...started,
+            sessionSetupResult: {
+              ...started.sessionSetupResult,
+              _meta: {
+                antigravity: {
+                  tier: { id: "g1-pro-tier", name: "Google AI Pro" },
+                },
+              },
+            },
+          },
+          "/workspace",
+        );
+        expect((yield* harness.provider.snapshot.getSnapshot).auth).toMatchObject({
+          status: "authenticated",
+          email: "alice@example.com",
+          label: "AI Pro",
+        });
+
+        yield* harness.provider.snapshot.refreshUsageManual!;
+        yield* harness.provider.snapshot.awaitUsageRefresh;
+        expect((yield* harness.provider.snapshot.getSnapshot).auth).toMatchObject({
+          status: "authenticated",
+          email: "alice@example.com",
+          label: "AI Ultra",
+        });
+      }),
+  );
 });

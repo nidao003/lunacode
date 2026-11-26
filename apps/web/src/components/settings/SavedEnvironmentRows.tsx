@@ -23,6 +23,7 @@ import {
   environmentMcpUrl,
 } from "@t3tools/client-runtime/connection";
 import * as Option from "effect/Option";
+import { rebrandTextToLunaCode } from "@t3tools/client-runtime/lunacode/brand-display";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { m, type MessageResolver } from "../../i18n/messages";
 
@@ -874,7 +875,7 @@ export function CloudLinkRow({
   if (!canReadRelay) {
     return (
       <SettingsRow
-        title={gt("T3 Connect")}
+        title={rebrandTextToLunaCode(gt("T3 Connect"))}
         description={gt(
           "To edit these settings, pair this connection with both View relay and Manage relay permissions.",
         )}

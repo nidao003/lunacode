@@ -129,6 +129,7 @@ const makeHarness = (
                     },
                     { requestId: "login", method: "elicitation/create" },
                   );
+                return {};
               }),
             start: () =>
               Effect.gen(function* () {

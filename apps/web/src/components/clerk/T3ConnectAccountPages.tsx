@@ -1,9 +1,15 @@
 import { useAuth, useClerk } from "@clerk/react";
+import {
+  LUNACODE_CHAT_NAME,
+  LUNACODE_CONNECT_NAME,
+} from "@t3tools/client-runtime/lunacode/brand-display";
 import { MessageSquareIcon, ServerIcon, SmartphoneIcon } from "lucide-react";
 import { msg, useMessages } from "gt-react";
 import { type ReactNode, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { resolveCloudAuthMode } from "../../cloud/publicConfig";
+import { openLunaAccountDialog, useLunaAuthState } from "../../lunacode/cloudAuth";
 import { MobileClientsUserProfilePage } from "./MobileClientsUserProfilePage";
 import { T3ChatUserProfilePage } from "./T3ChatUserProfilePage";
 import { T3ConnectUserProfilePage } from "./T3ConnectUserProfilePage";
@@ -16,13 +22,13 @@ export const T3_CONNECT_ACCOUNT_PAGES = [
     content: <MobileClientsUserProfilePage />,
   },
   {
-    label: "T3 Connect",
+    label: LUNACODE_CONNECT_NAME,
     url: "t3-connect",
     icon: <ServerIcon className="size-4" />,
     content: <T3ConnectUserProfilePage />,
   },
   {
-    label: "T3 Chat",
+    label: LUNACODE_CHAT_NAME,
     url: "t3-chat",
     icon: <MessageSquareIcon className="size-4" />,
     content: <T3ChatUserProfilePage />,
@@ -33,8 +39,18 @@ export type T3ConnectAccountPageUrl = (typeof T3_CONNECT_ACCOUNT_PAGES)[number][
 
 type PortalTargets = Readonly<Record<string, HTMLDivElement | undefined>>;
 
-/** Keep portals rendered while the modal can open; Clerk owns the custom-page DOM nodes. */
-export function useT3ConnectAccountPage(): {
+function useLunaT3ConnectAccountPage(): {
+  readonly open: ((page?: T3ConnectAccountPageUrl) => void) | null;
+  readonly portals: ReactNode;
+} {
+  const state = useLunaAuthState();
+  return {
+    open: state.isSignedIn ? openLunaAccountDialog : null,
+    portals: null,
+  };
+}
+
+function useClerkT3ConnectAccountPage(): {
   readonly open: ((page?: T3ConnectAccountPageUrl) => void) | null;
   readonly portals: ReactNode;
 } {
@@ -70,3 +86,9 @@ export function useT3ConnectAccountPage(): {
 
   return { open: isSignedIn ? open : null, portals };
 }
+
+/** Keep portals rendered while the modal can open; Clerk owns the custom-page DOM nodes. */
+export const useT3ConnectAccountPage =
+  resolveCloudAuthMode() === "lunacode"
+    ? useLunaT3ConnectAccountPage
+    : useClerkT3ConnectAccountPage;

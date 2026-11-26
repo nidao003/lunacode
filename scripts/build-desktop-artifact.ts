@@ -2728,15 +2728,21 @@ export function resolveDesktopRuntimeDependencies(
   );
 }
 
+const DEFAULT_LUNACODE_UPDATE_REPOSITORY = "nidao003/lunacode";
+const DISABLED_UPDATE_REPOSITORY_VALUES = new Set(["off", "none", "disabled", "false"]);
+
 export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig")(function* (
   updateChannel: "latest" | "nightly",
 ) {
   const env = yield* Config.all({
     updateRepository: Config.String("LUNACODE_DESKTOP_UPDATE_REPOSITORY").pipe(Config.option),
   });
-  const rawRepo = (Option.getOrUndefined(env.updateRepository)?.trim() ?? "").trim();
-  if (!rawRepo) return undefined;
+  const configuredRepo = Option.getOrUndefined(env.updateRepository)?.trim() ?? "";
+  if (DISABLED_UPDATE_REPOSITORY_VALUES.has(configuredRepo.toLowerCase())) {
+    return undefined;
+  }
 
+  const rawRepo = configuredRepo || DEFAULT_LUNACODE_UPDATE_REPOSITORY;
   const [owner, repo, ...rest] = rawRepo.split("/");
   if (!owner || !repo || rest.length > 0) return undefined;
 
@@ -2988,7 +2994,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     if (buildConfig.publish) {
       buildConfig.appImage = {
         artifactName:
-          updateChannel === "nightly" ? "T3-Code-Nightly-${arch}.${ext}" : "T3-Code-${arch}.${ext}",
+          updateChannel === "nightly"
+            ? "LunaCode-Nightly-${arch}.${ext}"
+            : "LunaCode-${arch}.${ext}",
       };
     }
     buildConfig.deb = {

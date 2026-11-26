@@ -537,28 +537,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       assert.isNull(preview.publish);
       assert.isNull(previewChannel.publish);
-      assert.isNull(release.publish);
-    }).pipe(
-      Effect.provide(
-        ConfigProvider.layer(
-          ConfigProvider.fromEnv({ env: { GITHUB_REPOSITORY: "pingdotgg/t3code" } }),
-        ),
-      ),
-    ),
-  );
-
-  it.effect("uses LUNACODE_DESKTOP_UPDATE_REPOSITORY only when explicitly configured", () =>
-    Effect.gen(function* () {
-      const release = yield* createBuildConfig(
-        "mac",
-        "dmg",
-        "0.0.33",
-        false,
-        false,
-        undefined,
-        undefined,
-      );
-
       assert.deepStrictEqual(release.publish, [
         {
           provider: "github",
@@ -570,12 +548,61 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }).pipe(
       Effect.provide(
         ConfigProvider.layer(
-          ConfigProvider.fromEnv({
-            env: { LUNACODE_DESKTOP_UPDATE_REPOSITORY: "nidao003/lunacode" },
-          }),
+          ConfigProvider.fromEnv({ env: { GITHUB_REPOSITORY: "pingdotgg/t3code" } }),
         ),
       ),
     ),
+  );
+
+  it.effect(
+    "defaults desktop updates to nidao003/lunacode and allows overriding or disabling",
+    () =>
+      Effect.gen(function* () {
+        const overridden = yield* createBuildConfig(
+          "mac",
+          "dmg",
+          "0.0.33",
+          false,
+          false,
+          undefined,
+          undefined,
+        ).pipe(
+          Effect.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromEnv({
+                env: { LUNACODE_DESKTOP_UPDATE_REPOSITORY: "acme/lunacode-fork" },
+              }),
+            ),
+          ),
+        );
+        const disabled = yield* createBuildConfig(
+          "mac",
+          "dmg",
+          "0.0.33",
+          false,
+          false,
+          undefined,
+          undefined,
+        ).pipe(
+          Effect.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromEnv({
+                env: { LUNACODE_DESKTOP_UPDATE_REPOSITORY: "off" },
+              }),
+            ),
+          ),
+        );
+
+        assert.deepStrictEqual(overridden.publish, [
+          {
+            provider: "github",
+            owner: "acme",
+            repo: "lunacode-fork",
+            releaseType: "release",
+          },
+        ]);
+        assert.isNull(disabled.publish);
+      }),
   );
 
   it.effect("names the Electron window class in the Linux desktop entry", () =>
@@ -604,18 +631,12 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       const stable = yield* appImageName("0.0.37");
       const nightly = yield* appImageName("0.0.38-nightly.20261026.3740");
 
+      assert.include(stable, "LunaCode-");
+      assert.include(nightly, "LunaCode-Nightly-");
       assert.notInclude(stable, "${version}");
       assert.notInclude(nightly, "${version}");
       assert.notEqual(stable, nightly);
-    }).pipe(
-      Effect.provide(
-        ConfigProvider.layer(
-          ConfigProvider.fromEnv({
-            env: { LUNACODE_DESKTOP_UPDATE_REPOSITORY: "nidao003/lunacode" },
-          }),
-        ),
-      ),
-    ),
+    }),
   );
 
   it.effect("declares Calendar and Apple Events access for hosted commands in macOS builds", () =>
@@ -662,7 +683,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
             ConfigProvider.fromEnv({
               env: {
                 LUNACODE_LOCAL_MAC_SIGN_IDENTITY:
-                  "  Apple Development: jasonhlj@126.com (WR55NTW623)  ",
+                  "  Apple Development: dev@example.com (TEAM123456)  ",
               },
             }),
           ),
@@ -676,7 +697,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       };
       assert.isString(macLocal.sign);
       assert.isTrue(macLocal.sign?.endsWith("scripts/sign-macos.ts"));
-      assert.strictEqual(macLocal.identity, "Apple Development: jasonhlj@126.com (WR55NTW623)");
+      assert.strictEqual(macLocal.identity, "Apple Development: dev@example.com (TEAM123456)");
       assert.strictEqual(macLocal.hardenedRuntime, false);
       assert.strictEqual(macLocal.timestamp, "none");
 

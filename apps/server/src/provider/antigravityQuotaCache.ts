@@ -19,10 +19,12 @@ const CacheFile = Schema.Struct({
     /** Last upstream subscription tier observed for the account. */
     plan: Schema.optional(Schema.String),
   }),
-  limits: Schema.Struct({
-    checkedAt: Schema.String,
-    windows: Schema.Array(ServerProviderUsageWindow),
-  }),
+  limits: Schema.optional(
+    Schema.Struct({
+      checkedAt: Schema.String,
+      windows: Schema.Array(ServerProviderUsageWindow),
+    }),
+  ),
 });
 type CacheFile = typeof CacheFile.Type;
 
@@ -60,6 +62,11 @@ export interface AntigravityQuotaCache {
   readonly hydrate: (email?: string) => Effect.Effect<ServerProviderUsageLimits | undefined>;
   /** Reads the cached subscription tier for the matching stored email when live probe is absent. */
   readonly readPlan: (email: string | undefined) => Effect.Effect<string | undefined>;
+  /** Persists a discovered subscription tier even before quota windows have been probed. */
+  readonly persistPlan: (
+    email: string | undefined,
+    plan: string | undefined,
+  ) => Effect.Effect<void>;
 }
 
 export const makeAntigravityQuotaCache = Effect.fn("makeAntigravityQuotaCache")(function* (input: {
@@ -79,27 +86,62 @@ export const makeAntigravityQuotaCache = Effect.fn("makeAntigravityQuotaCache")(
     return yield* decodeCacheFileText(text).pipe(Effect.orElseSucceed(() => undefined));
   });
 
+  const writeCacheFile = Effect.fn("AntigravityQuotaCache.writeCacheFile")(function* (
+    file: CacheFile,
+  ) {
+    yield* fs.makeDirectory(directory, { recursive: true });
+    // Write-then-rename keeps readers on all-or-nothing content.
+    const staging = `${cachePath}.tmp`;
+    yield* fs.writeFileString(staging, yield* encodeCacheFileText(file));
+    yield* fs.rename(staging, cachePath);
+  });
+
   const persist = Effect.fn("AntigravityQuotaCache.persist")(
     function* (limits: ServerProviderUsageLimits, email: string | undefined, plan?: string) {
       if (limits.unavailable !== undefined || limits.windows.length === 0) return;
       const hashed = yield* emailKey(email);
-      const trimmedPlan = plan?.trim() || undefined;
+      const cached = hashed ? yield* readCached : undefined;
+      const inheritedPlan =
+        hashed && cached?.account.emailHash === hashed
+          ? cached.account.plan?.trim() || undefined
+          : undefined;
+      const resolvedPlan = plan?.trim() || inheritedPlan;
       const file: CacheFile = {
         version: 1,
         account: {
           ...(hashed ? { emailHash: hashed } : {}),
           ...(limits.credentialFingerprint ? { fingerprint: limits.credentialFingerprint } : {}),
-          ...(trimmedPlan ? { plan: trimmedPlan } : {}),
+          ...(resolvedPlan ? { plan: resolvedPlan } : {}),
         },
         limits: { checkedAt: limits.checkedAt, windows: limits.windows },
       };
-      yield* fs.makeDirectory(directory, { recursive: true });
-      // Write-then-rename keeps readers on all-or-nothing content.
-      const staging = `${cachePath}.tmp`;
-      yield* fs.writeFileString(staging, yield* encodeCacheFileText(file));
-      yield* fs.rename(staging, cachePath);
+      yield* writeCacheFile(file);
     },
     Effect.catch(() => Effect.logWarning("Could not persist the Antigravity quota cache.")),
+  );
+
+  const persistPlan = Effect.fn("AntigravityQuotaCache.persistPlan")(
+    function* (email: string | undefined, plan: string | undefined) {
+      const hashed = yield* emailKey(email);
+      const trimmedPlan = plan?.trim() || undefined;
+      if (!hashed || !trimmedPlan) return;
+      const cached = yield* readCached;
+      const sameAccount = cached?.account.emailHash === hashed;
+      if (sameAccount && cached.account.plan?.trim() === trimmedPlan) return;
+      const file: CacheFile = {
+        version: 1,
+        account: {
+          emailHash: hashed,
+          ...(sameAccount && cached.account.fingerprint
+            ? { fingerprint: cached.account.fingerprint }
+            : {}),
+          plan: trimmedPlan,
+        },
+        ...(sameAccount && cached.limits ? { limits: cached.limits } : {}),
+      };
+      yield* writeCacheFile(file);
+    },
+    Effect.catch(() => Effect.logWarning("Could not persist the Antigravity subscription tier.")),
   );
 
   const recover = Effect.fn("AntigravityQuotaCache.recover")(function* (
@@ -109,7 +151,7 @@ export const makeAntigravityQuotaCache = Effect.fn("makeAntigravityQuotaCache")(
     if (probed.unavailable?.reason !== "probeFailed" || probed.windows.length > 0) return probed;
     const hashed = yield* emailKey(email);
     const cached = yield* readCached;
-    if (!cached) return probed;
+    if (!cached?.limits) return probed;
     if (
       hashed === undefined
         ? cached.account.emailHash !== undefined
@@ -129,7 +171,7 @@ export const makeAntigravityQuotaCache = Effect.fn("makeAntigravityQuotaCache")(
 
   const hydrate = Effect.fn("AntigravityQuotaCache.hydrate")(function* (email?: string) {
     const cached = yield* readCached;
-    if (!cached) return undefined;
+    if (!cached?.limits) return undefined;
     const hashed = yield* emailKey(email);
     if (
       hashed === undefined
@@ -177,6 +219,8 @@ export const makeAntigravityQuotaCache = Effect.fn("makeAntigravityQuotaCache")(
   return {
     persist: (limits: ServerProviderUsageLimits, email: string | undefined, plan?: string) =>
       withServices(persist(limits, email, plan)),
+    persistPlan: (email: string | undefined, plan: string | undefined) =>
+      withServices(persistPlan(email, plan)),
     recover: (probed: ServerProviderUsageLimits, email: string | undefined) =>
       withServices(recover(probed, email)),
     hydrate: (email?: string) => withServices(hydrate(email)),

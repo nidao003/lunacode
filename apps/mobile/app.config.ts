@@ -75,13 +75,25 @@ const RELEASE_ASSETS = {
   androidNotificationColor: "#162A52",
 } as const;
 
+const defaultConnectHost = (() => {
+  const raw = repoEnv.LUNACODE_CONNECT_URL?.trim() || repoEnv.LUNACODE_AUTH_URL?.trim();
+  if (!raw) return "connect.example.com";
+  try {
+    return new URL(raw).hostname;
+  } catch {
+    return "connect.example.com";
+  }
+})();
+const hasClerkPublishableKey = Boolean(repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim());
+const defaultRelyingParty = hasClerkPublishableKey ? "clerk.t3.codes" : defaultConnectHost;
+
 const VARIANT_CONFIG = {
   development: {
     appName: "LunaCode Dev",
     scheme: "t3code-dev",
     iosBundleIdentifier: "com.t3tools.t3code.dev",
     androidPackage: "com.t3tools.t3code.dev",
-    relyingParty: "clerk.t3.codes",
+    relyingParty: defaultRelyingParty,
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
@@ -89,7 +101,7 @@ const VARIANT_CONFIG = {
     scheme: "t3code-preview",
     iosBundleIdentifier: "com.t3tools.t3code.preview",
     androidPackage: "com.t3tools.t3code.preview",
-    relyingParty: "clerk.t3.codes",
+    relyingParty: defaultRelyingParty,
     assets: PREVIEW_ASSETS,
   },
   production: {
@@ -97,7 +109,7 @@ const VARIANT_CONFIG = {
     scheme: "t3code",
     iosBundleIdentifier: "com.nidao003.lunacode.mobile",
     androidPackage: "com.nidao003.lunacode.mobile",
-    relyingParty: "clerk.t3.codes",
+    relyingParty: defaultRelyingParty,
     assets: RELEASE_ASSETS,
   },
 } as const;
@@ -116,8 +128,7 @@ function resolveAppVariant(value: string | undefined): AppVariant {
 }
 
 const variant = VARIANT_CONFIG[APP_VARIANT];
-// Copied thread links open the app. app.t3.codes/.well-known lists every variant's identifiers.
-const HOSTED_APP_HOST = "app.t3.codes";
+const HOSTED_APP_HOST = defaultConnectHost;
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
   : variant.iosBundleIdentifier;
@@ -262,11 +273,13 @@ const config: ExpoConfig = {
       : "ARK85ZXQ4Z",
     ...(!isIosPersonalTeamBuild
       ? {
-          associatedDomains: [
-            `applinks:${variant.relyingParty}`,
-            `webcredentials:${variant.relyingParty}`,
-            `applinks:${HOSTED_APP_HOST}`,
-          ],
+          associatedDomains: Array.from(
+            new Set([
+              `applinks:${variant.relyingParty}`,
+              `webcredentials:${variant.relyingParty}`,
+              `applinks:${HOSTED_APP_HOST}`,
+            ]),
+          ),
           entitlements: {
             "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],
           },
@@ -480,7 +493,15 @@ const config: ExpoConfig = {
     appVariant: APP_VARIANT,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     relay: {
-      url: repoEnv.T3CODE_RELAY_URL ?? null,
+      url: repoEnv.T3CODE_RELAY_URL ?? repoEnv.LUNACODE_CONNECT_URL ?? null,
+    },
+    lunacode: {
+      authUrl:
+        repoEnv.EXPO_PUBLIC_LUNACODE_AUTH_URL ??
+        repoEnv.LUNACODE_AUTH_URL ??
+        repoEnv.LUNACODE_CONNECT_URL ??
+        null,
+      selfHostedEnabled: repoEnv.EXPO_PUBLIC_LUNACODE_SELF_HOSTED_AUTH === "1",
     },
     clerk: {
       publishableKey: repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null,

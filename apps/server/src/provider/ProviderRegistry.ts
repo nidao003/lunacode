@@ -334,10 +334,25 @@ const carrySavedAntigravityAccount = (
   const status =
     nextProvider.installed && nextProvider.status === "warning" ? "ready" : nextProvider.status;
   // Promote fresh email / subscription tier discovered by local checks onto the saved auth object.
+  const sameEmail =
+    !nextProvider.auth.email ||
+    !previousProvider.auth.email ||
+    nextProvider.auth.email.trim().toLowerCase() ===
+      previousProvider.auth.email.trim().toLowerCase();
+  const nextLabel =
+    nextProvider.auth.label &&
+    !(
+      sameEmail &&
+      nextProvider.auth.label === "Google account" &&
+      previousProvider.auth.label &&
+      previousProvider.auth.label !== "Google account"
+    )
+      ? nextProvider.auth.label
+      : previousProvider.auth.label;
   const auth = {
     ...previousProvider.auth,
     ...(nextProvider.auth.email ? { email: nextProvider.auth.email } : {}),
-    ...(nextProvider.auth.label ? { label: nextProvider.auth.label } : {}),
+    ...(nextLabel ? { label: nextLabel } : {}),
   };
   return { auth, status };
 };

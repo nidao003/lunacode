@@ -50,6 +50,11 @@ on:
         required: true
         default: true
         type: boolean
+      build_docker_image:
+        description: Build & push multi-arch lunacode-connect Docker image
+        required: true
+        default: true
+        type: boolean
 
 concurrency:
   group: lunacode-release-${{ github.ref }}
@@ -57,6 +62,13 @@ concurrency:
 
 permissions:
   contents: read
+
+env:
+  LUNACODE_CONNECT_URL: ${{ vars.LUNACODE_CONNECT_URL }}
+  LUNACODE_AUTH_URL: ${{ vars.LUNACODE_AUTH_URL }}
+  T3CODE_RELAY_URL: ${{ vars.T3CODE_RELAY_URL }}
+  LUNACODE_DESKTOP_UPDATE_REPOSITORY: ${{ vars.LUNACODE_DESKTOP_UPDATE_REPOSITORY || 'nidao003/lunacode' }}
+  T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ vars.T3CODE_DESKTOP_UPDATE_REPOSITORY || 'nidao003/lunacode' }}
 
 jobs:
   prepare:
@@ -74,6 +86,7 @@ jobs:
       win_x64: ${{ steps.meta.outputs.win_x64 }}
       android_apk: ${{ steps.meta.outputs.android_apk }}
       ios_ipa: ${{ steps.meta.outputs.ios_ipa }}
+      docker_image: ${{ steps.meta.outputs.docker_image }}
       need_desktop_bundle: ${{ steps.meta.outputs.need_desktop_bundle }}
     steps:
       - name: Sparse checkout
@@ -102,6 +115,7 @@ jobs:
           INPUT_WIN_X64: ${{ inputs.build_win_x64 }}
           INPUT_ANDROID_APK: ${{ inputs.build_android_apk }}
           INPUT_IOS_IPA: ${{ inputs.build_ios_ipa }}
+          INPUT_DOCKER_IMAGE: ${{ inputs.build_docker_image }}
         run: |
           set -euo pipefail
           if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
@@ -114,6 +128,7 @@ jobs:
             win_x64="true"
             android_apk="true"
             ios_ipa="true"
+            docker_image="true"
             if [[ "$version" == *-* ]]; then
               prerelease="true"
             else
@@ -132,6 +147,7 @@ jobs:
             win_x64="${INPUT_WIN_X64:-true}"
             android_apk="${INPUT_ANDROID_APK:-true}"
             ios_ipa="${INPUT_IOS_IPA:-true}"
+            docker_image="${INPUT_DOCKER_IMAGE:-true}"
             if [[ "${INPUT_PRERELEASE:-false}" == "true" || "$version" == *-* ]]; then
               prerelease="true"
             else
@@ -150,7 +166,7 @@ jobs:
             need_desktop_bundle="false"
           fi
 
-          if [[ "$need_desktop_bundle" != "true" && "$android_apk" != "true" && "$ios_ipa" != "true" ]]; then
+          if [[ "$need_desktop_bundle" != "true" && "$android_apk" != "true" && "$ios_ipa" != "true" && "$docker_image" != "true" ]]; then
             echo "::error::At least one target platform must be enabled."
             exit 1
           fi
@@ -166,6 +182,7 @@ jobs:
             echo "win_x64=$win_x64"
             echo "android_apk=$android_apk"
             echo "ios_ipa=$ios_ipa"
+            echo "docker_image=$docker_image"
             echo "need_desktop_bundle=$need_desktop_bundle"
           } >> "$GITHUB_OUTPUT"
 
@@ -358,7 +375,7 @@ jobs:
           set -euo pipefail
           mkdir -p release-publish
           shopt -s nullglob
-          for file in release/*.dmg release/*.zip; do
+          for file in release/*.dmg release/*.zip release/*.blockmap release/*-mac.yml; do
             cp "$file" release-publish/
           done
 
@@ -523,8 +540,12 @@ jobs:
           set -euo pipefail
           mkdir -p release-publish
           shopt -s nullglob
-          for file in release/*.dmg release/*.zip; do
+          for file in release/*.dmg release/*.zip release/*.blockmap; do
             cp "$file" release-publish/
+          done
+          for file in release/*-mac.yml; do
+            base="$(basename "$file" .yml)"
+            cp "$file" "release-publish/${base}-x64.yml"
           done
 
       - name: Upload macOS x64 artifacts
@@ -668,7 +689,7 @@ jobs:
           set -euo pipefail
           mkdir -p release-publish
           shopt -s nullglob
-          for file in release/*.AppImage release/*.deb; do
+          for file in release/*.AppImage release/*.deb release/*.blockmap release/*-linux.yml; do
             cp "$file" release-publish/
           done
 
@@ -803,7 +824,7 @@ jobs:
           set -euo pipefail
           mkdir -p release-publish
           shopt -s nullglob
-          for file in release/*.exe; do
+          for file in release/*.exe release/*.blockmap release/latest.yml release/nightly.yml release/*-win.yml; do
             cp "$file" release-publish/
           done
 
@@ -1012,6 +1033,88 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
+  docker_connect_image:
+    name: Docker lunacode-connect (amd64/arm64)
+    needs: [prepare]
+    if: needs.prepare.outputs.docker_image == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+    steps:
+      - name: Sparse checkout
+        shell: bash
+        env:
+          CHECKOUT_SHA: ${{ github.sha }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${CHECKOUT_SHA}"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+
+      - name: Check Docker Hub credentials
+        id: creds
+        shell: bash
+        run: |
+          if [[ -n "${DOCKERHUB_USERNAME:-}" && -n "${DOCKERHUB_TOKEN:-}" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DOCKERHUB_USERNAME/DOCKERHUB_TOKEN secrets not set; running single-arch Docker build smoke test without push."
+          fi
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=@t3tools/web...
+
+      - name: Setup QEMU for multi-arch Docker build
+        if: steps.creds.outputs.configured == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]]; then
+            docker run --privileged --rm tonistiigi/binfmt --install arm64
+          fi
+
+      - name: Log in to Docker Hub
+        if: steps.creds.outputs.configured == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+
+      - name: Build & push multi-arch Docker Hub image
+        if: steps.creds.outputs.configured == 'true'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          APP_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          bash services/lunacode-connect/scripts/build-image.sh \
+            --platform linux/amd64,linux/arm64 \
+            --tag "${DOCKERHUB_USERNAME}/lunacode-connect:latest" \
+            --tag "${DOCKERHUB_USERNAME}/lunacode-connect:${RELEASE_VERSION}" \
+            --push
+
+      - name: Build single-arch Docker smoke test
+        if: steps.creds.outputs.configured != 'true'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          APP_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          bash services/lunacode-connect/scripts/build-image.sh \
+            --platform linux/amd64 \
+            --tag "lunacode-connect:${RELEASE_VERSION}" \
+            --load
+
   publish:
     name: Collect & Publish Release
     runs-on: ubuntu-24.04
@@ -1026,10 +1129,10 @@ jobs:
       - desktop_win_x64
       - mobile_android_apk
       - mobile_ios_ipa
-    if: ${{ always() && needs.prepare.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+      - docker_connect_image
+    if: ${{ always() && needs.prepare.result == 'success' && (needs.prepare.outputs.need_desktop_bundle == 'true' || needs.prepare.outputs.android_apk == 'true' || needs.prepare.outputs.ios_ipa == 'true') && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
     steps:
       - name: Sparse checkout
-        if: needs.prepare.outputs.publish_release == 'true'
         shell: bash
         env:
           CHECKOUT_SHA: ${{ github.sha }}
@@ -1042,12 +1145,62 @@ jobs:
           git sparse-checkout set --no-cone '/*' '!/.repos/'
           git -c checkout.workers=0 checkout --detach FETCH_HEAD
 
+      - name: Setup Node runtime
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install: "false"
+
       - name: Download built artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: lunacode-*
           merge-multiple: true
           path: release-assets
+
+      - name: Merge macOS updater manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types --input-type=module -e '
+            import fs from "node:fs";
+            import path from "node:path";
+            import {
+              mergeUpdateManifests,
+              parseUpdateManifest,
+              serializeUpdateManifest,
+            } from "./scripts/lib/update-manifest.ts";
+
+            const dir = "release-assets";
+            const entries = fs.readdirSync(dir);
+            for (const file of entries) {
+              const match = /^(.+)-mac-x64\.yml$/u.exec(file);
+              if (!match) continue;
+              const channel = match[1];
+              const x64Path = path.join(dir, file);
+              const macPath = path.join(dir, `${channel}-mac.yml`);
+              if (fs.existsSync(macPath)) {
+                const arm64Manifest = parseUpdateManifest(
+                  fs.readFileSync(macPath, "utf8"),
+                  macPath,
+                  "macOS",
+                );
+                const x64Manifest = parseUpdateManifest(
+                  fs.readFileSync(x64Path, "utf8"),
+                  x64Path,
+                  "macOS",
+                );
+                const merged = mergeUpdateManifests(arm64Manifest, x64Manifest, "macOS");
+                fs.writeFileSync(
+                  macPath,
+                  serializeUpdateManifest(merged, { platformLabel: "macOS" }),
+                  "utf8",
+                );
+                fs.rmSync(x64Path);
+              } else {
+                fs.renameSync(x64Path, macPath);
+              }
+            }
+          '
 
       - name: Verify artifacts and write SHA256SUMS
         shell: bash
@@ -1079,8 +1232,16 @@ jobs:
       - name: Write release notes
         if: needs.prepare.outputs.publish_release == 'true'
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          cat > release-notes.md <<'EOF'
+          : > release-notes.md
+          notes_file="docs/releases/v${RELEASE_VERSION}.md"
+          if [[ -f "$notes_file" ]]; then
+            cat "$notes_file" > release-notes.md
+            printf '\n\n---\n\n' >> release-notes.md
+          fi
+          cat >> release-notes.md <<'EOF'
           ### LunaCode Installation Notes
 
           - **macOS (`.dmg` / `.zip`)**: Unsigned builds trigger Gatekeeper on first launch. After moving `LunaCode.app` to `/Applications`, strip quarantine or sign locally with `.claude/skills/lunacode-mac-dmg`:
@@ -1091,6 +1252,11 @@ jobs:
           - **Windows (`.exe`)**: NSIS installer (SmartScreen prompt is expected while unsigned).
           - **Android (`.apk`)**: Sideload `LunaCode-mobile-*-arm64-v8a-release.apk`.
           - **iOS (`.ipa`)**: Unsigned sideload-ready IPA (`com.nidao003.lunacode.mobile`). Install via AltStore, SideStore, Sideloadly (re-signing with your Apple ID), or TrollStore.
+          - **Self-Hosted Backend (`Docker`)**: Multi-arch image (`linux/amd64`, `linux/arm64`) published to Docker Hub:
+            ```bash
+            docker pull nidao008/lunacode-connect:${RELEASE_VERSION}
+            docker pull nidao008/lunacode-connect:latest
+            ```
 
           Verify downloads against `SHA256SUMS`.
 

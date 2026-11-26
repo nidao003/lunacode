@@ -40,7 +40,7 @@ function clerkTokenReader(clerk: ClerkInstance): () => Promise<string | null> {
 }
 
 // A failed route removal fails the switch, so the next account never activates over the old routes.
-async function cleanUpManagedRelayAccount(): Promise<void> {
+export async function cleanUpManagedRelayAccount(): Promise<void> {
   const [removal, tokenReset] = await Promise.all([
     runAtomCommand(appAtomRegistry, environmentCatalog.removeRelayEnvironments, undefined, {
       reportFailure: false,

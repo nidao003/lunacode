@@ -41,7 +41,7 @@ function hasExplicitUrlPort(rawInput: string, parsedHostHeader: string): boolean
 }
 
 /**
- * Normalizes a custom LAN domain or URL (such as `daodao-2.local:8000` or `http://daodao-2.local/`)
+ * Normalizes a custom LAN domain or URL (such as `workstation.local:8000` or `http://workstation.local/`)
  * into a canonical origin URL with trailing slash. Rejects paths, queries, fragments, and credentials.
  */
 export function normalizeCustomLanEndpointUrl(

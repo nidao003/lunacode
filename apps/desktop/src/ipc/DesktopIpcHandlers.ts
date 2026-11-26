@@ -94,6 +94,7 @@ import {
   addCliCommandToPath,
 } from "./methods/cliCommand.ts";
 import { getLunaRtkStatusIpc, initLunaRtkGlobalIpc } from "../lunacode/rtkHelper.ts";
+import { setLunaAuthUrlIpc } from "../lunacode/authOriginBridge.ts";
 
 export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers")(function* () {
   const ipc = yield* DesktopIpc.DesktopIpc;
@@ -196,4 +197,5 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(PreviewIpc.importBrowserCookies);
   yield* ipc.handle(getLunaRtkStatusIpc);
   yield* ipc.handle(initLunaRtkGlobalIpc);
+  yield* ipc.handle(setLunaAuthUrlIpc);
 });

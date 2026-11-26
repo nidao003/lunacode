@@ -1,4 +1,5 @@
 import { useGT } from "gt-react";
+import { LUNACODE_BRAND_NAME } from "@t3tools/client-runtime/lunacode/brand-display";
 import { MoonIcon, SunIcon } from "lucide-react";
 import type { CSSProperties } from "react";
 import {
@@ -59,7 +60,7 @@ const STANDARD_THEME_PREVIEW_COLORS: Record<
 export const STANDARD_THEME_CARDS: ReadonlyArray<ThemeCardDefinition> = [
   {
     id: "default",
-    label: "T3 Code",
+    label: LUNACODE_BRAND_NAME,
     previews: (["light", "dark"] as const).map((mode) => ({
       mode,
       colors: STANDARD_THEME_PREVIEW_COLORS[mode],

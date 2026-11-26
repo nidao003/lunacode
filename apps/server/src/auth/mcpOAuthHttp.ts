@@ -86,8 +86,12 @@ export const layer = HttpApiBuilder.group(
     // T3 Connect serves this host, so the owner can approve on the hosted app by signing in there.
     const hostedApprovalUrl = (issuer: string, search: string) =>
       cloudLink.linkState().pipe(
-        Effect.flatMap((state) =>
-          state.linked && !state.linkRevoked && state.tunnelHostname === new URL(issuer).hostname
+        Effect.flatMap((state) => {
+          const parsedIssuer = new URL(issuer);
+          const matchesTunnel =
+            state.tunnelHostname === parsedIssuer.host ||
+            state.tunnelHostname === parsedIssuer.hostname;
+          return state.linked && !state.linkRevoked && matchesTunnel
             ? serverEnvironment.getEnvironmentId.pipe(
                 Effect.map((environmentId) => {
                   const url = new URL(HOSTED_APPROVAL_PATH, hostedAppUrl);
@@ -96,8 +100,8 @@ export const layer = HttpApiBuilder.group(
                   return Option.some(url.toString());
                 }),
               )
-            : Effect.succeedNone,
-        ),
+            : Effect.succeedNone;
+        }),
         Effect.orElseSucceed(Option.none),
       );
     const protectedResource = () =>

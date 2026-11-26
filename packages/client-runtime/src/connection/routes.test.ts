@@ -81,7 +81,7 @@ describe("connection routes", () => {
     expect(connectionRouteLabel(direct("ts-serve", "https://box.tail1234.ts.net/"))).toBe(
       "Tailscale HTTPS",
     );
-    expect(connectionRouteLabel(RELAY)).toBe("T3 Connect");
+    expect(connectionRouteLabel(RELAY)).toBe("Luna Connect");
   });
 
   it("knows which addresses reach the same machine on every network", () => {
@@ -231,7 +231,7 @@ describe("learned routes", () => {
       reported: [tailscale, mesh],
       allowInsecure: true,
     })!;
-    expect(first.map(connectionRouteLabel)).toEqual(["Tailscale", "VPN", "T3 Connect"]);
+    expect(first.map(connectionRouteLabel)).toEqual(["Tailscale", "VPN", "Luna Connect"]);
 
     const corrected = mergeLearnedRoutes({
       entry: entryWithRoutes(relayOnly, first),
@@ -240,7 +240,7 @@ describe("learned routes", () => {
       allowInsecure: true,
     })!;
     expect(ids(corrected)).toEqual(ids(first));
-    expect(corrected.map(connectionRouteLabel)).toEqual(["VPN", "VPN", "T3 Connect"]);
+    expect(corrected.map(connectionRouteLabel)).toEqual(["VPN", "VPN", "Luna Connect"]);
     expect(
       mergeLearnedRoutes({
         entry: entryWithRoutes(relayOnly, corrected),
@@ -471,5 +471,17 @@ describe("learned routes", () => {
     });
     expect(moved).not.toBeNull();
     expect(profileOf(moved![0]!)).toMatchObject({ httpBaseUrl: "https://desk.local:3773/" });
+  });
+
+  it("ranks learned .local LAN routes ahead of public relay routes", () => {
+    const learned = mergeLearnedRoutes({
+      entry: relayOnly,
+      activeRoute: RELAY,
+      reported: [{ httpBaseUrl: "http://macbook.local:3773/" }],
+      allowInsecure: true,
+    });
+    expect(ids(learned)).toEqual([`learned:${ENVIRONMENT_ID}:http://macbook.local:3773`, "relay"]);
+    expect(connectionRouteKind(learned![0]!)).toBe("lan");
+    expect(connectionRouteKind(learned![1]!)).toBe("relay");
   });
 });

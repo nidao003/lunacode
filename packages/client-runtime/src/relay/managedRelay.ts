@@ -43,6 +43,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SynchronizedRef from "effect/SynchronizedRef";
+import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
 import type * as HttpMethod from "effect/http/HttpMethod";
 import * as HttpApiClient from "effect/http-api/HttpApiClient";
@@ -370,7 +371,7 @@ export interface ManagedRelayAuthorization {
 }
 
 export interface ManagedRelayClientLayerOptions {
-  readonly relayUrl: string;
+  readonly relayUrl: string | (() => string);
   readonly clientId: RelayPublicClientId;
   readonly accessTokenStore?: ManagedRelayAccessTokenStore;
 }
@@ -577,49 +578,81 @@ function disabledManagedRelayClient(relayUrl: string): ManagedRelayClient["Servi
 export const make = Effect.fn("ManagedRelayClient.make")(function* (
   options: ManagedRelayClientLayerOptions,
 ) {
-  const relayUrl = normalizeSecureRelayUrl(options.relayUrl);
-  if (relayUrl === null) {
+  const readRawRelayUrl =
+    typeof options.relayUrl === "function" ? options.relayUrl : () => options.relayUrl as string;
+  if (typeof options.relayUrl === "string" && normalizeSecureRelayUrl(options.relayUrl) === null) {
     return disabledManagedRelayClient(options.relayUrl);
   }
   const signer = yield* ManagedRelayDpopSigner;
-  const client = yield* HttpApiClient.make(RelayApi, { baseUrl: relayUrl });
+  const httpClient = yield* HttpClient.HttpClient;
   const initialTokens = options.accessTokenStore ? yield* options.accessTokenStore.load : [];
   const cachedTokens = yield* SynchronizedRef.make<
     ReadonlyArray<ManagedRelayAccessTokenCacheEntry>
   >(initialTokens.filter((token) => token.clientId === options.clientId));
-  const urlBuilder = HttpApiClient.urlBuilder(RelayApi, { baseUrl: relayUrl });
+
+  const createTarget = (relayUrl: string) =>
+    Effect.map(
+      HttpApiClient.make(RelayApi, { baseUrl: relayUrl }).pipe(
+        Effect.provideService(HttpClient.HttpClient, httpClient),
+      ),
+      (client) => ({
+        relayUrl,
+        client,
+        urlBuilder: HttpApiClient.urlBuilder(RelayApi, { baseUrl: relayUrl }),
+      }),
+    );
+  type RelayTarget = Effect.Success<ReturnType<typeof createTarget>>;
+  type RelayUrlBuilder = RelayTarget["urlBuilder"];
+  type RelayHttpClient = RelayTarget["client"];
+  let cachedTarget: RelayTarget | null = null;
+
+  const resolveTarget = Effect.gen(function* () {
+    const raw = readRawRelayUrl();
+    const relayUrl = normalizeSecureRelayUrl(raw);
+    if (relayUrl === null) {
+      return yield* new ManagedRelayUrlInvalidError({ relayUrl: raw });
+    }
+    if (cachedTarget?.relayUrl === relayUrl) {
+      return cachedTarget;
+    }
+    const next = yield* createTarget(relayUrl);
+    cachedTarget = next;
+    return next;
+  });
 
   type DpopProofTarget = Pick<ManagedRelayDpopProofInput, "method" | "url">;
   const dpopProofTargets = {
-    exchangeAccessToken: (): DpopProofTarget => ({
+    exchangeAccessToken: (urlBuilder: RelayUrlBuilder): DpopProofTarget => ({
       method: RelayExchangeDpopAccessTokenEndpoint.method,
       url: urlBuilder.token.exchangeDpopAccessToken(),
     }),
     getEnvironmentStatus: (
+      urlBuilder: RelayUrlBuilder,
       environmentId: RelayClientEnvironmentRecord["environmentId"],
     ): DpopProofTarget => ({
       method: RelayGetEnvironmentStatusEndpoint.method,
       url: urlBuilder.dpopClient.getEnvironmentStatus({ params: { environmentId } }),
     }),
     connectEnvironment: (
+      urlBuilder: RelayUrlBuilder,
       environmentId: RelayClientEnvironmentRecord["environmentId"],
     ): DpopProofTarget => ({
       method: RelayConnectEnvironmentEndpoint.method,
       url: urlBuilder.dpopClient.connectEnvironment({ params: { environmentId } }),
     }),
-    registerDevice: (): DpopProofTarget => ({
+    registerDevice: (urlBuilder: RelayUrlBuilder): DpopProofTarget => ({
       method: RelayRegisterDeviceEndpoint.method,
       url: urlBuilder.mobile.registerDevice(),
     }),
-    unregisterDevice: (deviceId: string): DpopProofTarget => ({
+    unregisterDevice: (urlBuilder: RelayUrlBuilder, deviceId: string): DpopProofTarget => ({
       method: RelayUnregisterDeviceEndpoint.method,
       url: urlBuilder.mobile.unregisterDevice({ params: { deviceId } }),
     }),
-    getAgentActivitySnapshot: (): DpopProofTarget => ({
+    getAgentActivitySnapshot: (urlBuilder: RelayUrlBuilder): DpopProofTarget => ({
       method: RelayAgentActivitySnapshotEndpoint.method,
       url: urlBuilder.mobile.getAgentActivitySnapshot(),
     }),
-    registerLiveActivity: (): DpopProofTarget => ({
+    registerLiveActivity: (urlBuilder: RelayUrlBuilder): DpopProofTarget => ({
       method: RelayRegisterLiveActivityEndpoint.method,
       url: urlBuilder.mobile.registerLiveActivity(),
     }),
@@ -627,6 +660,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
 
   const exchangeAccessToken = Effect.fn("clientRuntime.managedRelay.exchangeAccessToken")(
     function* (input: {
+      readonly target: RelayTarget;
       readonly clerkToken: string;
       readonly scopes: ReadonlyArray<RelayDpopAccessTokenScope>;
     }) {
@@ -635,13 +669,13 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
         "relay.scopes": input.scopes.join(" "),
       });
       const proof = yield* signer
-        .createProof(dpopProofTargets.exchangeAccessToken())
+        .createProof(dpopProofTargets.exchangeAccessToken(input.target.urlBuilder))
         .pipe(
           Effect.mapError(
             (error) => new ManagedRelayTokenProofCreationError(proofCreationErrorFields(error)),
           ),
         );
-      const response = yield* client.token
+      const response = yield* input.target.client.token
         .exchangeDpopAccessToken({
           headers: { dpop: proof },
           payload: {
@@ -649,7 +683,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
             subject_token: input.clerkToken,
             subject_token_type: RelayJwtSubjectTokenType,
             requested_token_type: RelayAccessTokenType,
-            resource: relayUrl,
+            resource: input.target.relayUrl,
             scope: encodeOAuthScope(input.scopes),
             client_id: options.clientId,
           },
@@ -670,6 +704,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
 
   const obtainAccessToken = Effect.fn("clientRuntime.managedRelay.obtainAccessToken")(
     function* (input: {
+      readonly target: RelayTarget;
       readonly clerkToken: string;
       readonly scopes: ReadonlyArray<RelayDpopAccessTokenScope>;
       readonly thumbprint: string;
@@ -678,6 +713,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
         "relay.client_id": options.clientId,
         "relay.scopes": input.scopes.join(" "),
       });
+      const relayUrl = input.target.relayUrl;
       const nowMillis = yield* Clock.currentTimeMillis;
       const accountId = yield* relayAccountId(input.clerkToken);
       if (Option.isNone(accountId)) {
@@ -754,23 +790,26 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
   const authorize = Effect.fn("clientRuntime.managedRelay.authorize")(function* (input: {
     readonly clerkToken: string;
     readonly scopes: ReadonlyArray<RelayDpopAccessTokenScope>;
-    readonly target: DpopProofTarget;
+    readonly buildTarget: (urlBuilder: RelayUrlBuilder) => DpopProofTarget;
   }) {
+    const relayTarget = yield* resolveTarget;
+    const dpopTarget = input.buildTarget(relayTarget.urlBuilder);
     yield* Effect.annotateCurrentSpan({
       "relay.client_id": options.clientId,
       "relay.scopes": input.scopes.join(" "),
-      "http.request.method": input.target.method,
-      "url.full": input.target.url,
+      "http.request.method": dpopTarget.method,
+      "url.full": dpopTarget.url,
     });
     const thumbprint = yield* signer.thumbprint;
     const token = yield* obtainAccessToken({
+      target: relayTarget,
       clerkToken: input.clerkToken,
       scopes: input.scopes,
       thumbprint,
     });
     const proof = yield* signer
       .createProof({
-        ...input.target,
+        ...dpopTarget,
         accessToken: token.accessToken,
       })
       .pipe(
@@ -778,7 +817,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
           (error) => new ManagedRelayRequestProofCreationError(proofCreationErrorFields(error)),
         ),
       );
-    return { accessToken: token.accessToken, proof, thumbprint };
+    return { accessToken: token.accessToken, proof, thumbprint, client: relayTarget.client };
   });
 
   const invalidateAccessToken = Effect.fn("clientRuntime.managedRelay.invalidateAccessToken")(
@@ -799,16 +838,17 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     input: {
       readonly clerkToken: string;
       readonly scopes: ReadonlyArray<RelayDpopAccessTokenScope>;
-      readonly target: DpopProofTarget;
+      readonly buildTarget: (urlBuilder: RelayUrlBuilder) => DpopProofTarget;
     },
     request: (
       authorization: ManagedRelayAuthorization,
+      client: RelayHttpClient,
     ) => Effect.Effect<A, ManagedRelayClientError>,
   ): Effect.Effect<A, ManagedRelayClientError> => {
     const attempt = (refreshRejectedToken: boolean): Effect.Effect<A, ManagedRelayClientError> =>
       authorize(input).pipe(
-        Effect.flatMap((authorization) =>
-          request(authorization).pipe(
+        Effect.flatMap(({ client, ...authorization }) =>
+          request(authorization, client).pipe(
             Effect.catchIf(isRejectedDpopAccessToken, (error) =>
               invalidateAccessToken(authorization.accessToken).pipe(
                 Effect.tap((invalidated) =>
@@ -837,10 +877,11 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
   const mobileRegistrationRequest = <A>(
     input: {
       readonly clerkToken: string;
-      readonly target: DpopProofTarget;
+      readonly buildTarget: (urlBuilder: RelayUrlBuilder) => DpopProofTarget;
     },
     request: (
       authorization: ManagedRelayAuthorization,
+      client: RelayHttpClient,
     ) => Effect.Effect<A, ManagedRelayClientError>,
   ) =>
     runDpopRequest(
@@ -852,9 +893,13 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     );
 
   return ManagedRelayClient.of({
-    relayUrl,
+    get relayUrl() {
+      const raw = readRawRelayUrl();
+      return normalizeSecureRelayUrl(raw) ?? raw;
+    },
     listEnvironments: Effect.fnUntraced(
       function* (input) {
+        const { client } = yield* resolveTarget;
         return yield* client.client
           .listEnvironments({ headers: bearerHeaders(input.clerkToken) })
           .pipe(
@@ -868,6 +913,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     ),
     listDevices: Effect.fnUntraced(
       function* (input) {
+        const { client } = yield* resolveTarget;
         return yield* client.client
           .listDevicesV2({
             headers: bearerHeaders(input.clerkToken),
@@ -883,6 +929,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     ),
     createEnvironmentLinkChallenge: Effect.fnUntraced(
       function* (input) {
+        const { client } = yield* resolveTarget;
         return yield* client.client
           .createEnvironmentLinkChallenge({
             headers: bearerHeaders(input.clerkToken),
@@ -898,6 +945,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     ),
     linkEnvironment: Effect.fnUntraced(
       function* (input) {
+        const { client } = yield* resolveTarget;
         return yield* client.client
           .linkEnvironment({
             headers: bearerHeaders(input.clerkToken),
@@ -913,6 +961,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     ),
     unlinkEnvironment: Effect.fnUntraced(
       function* (input) {
+        const { client } = yield* resolveTarget;
         return yield* client.client
           .unlinkEnvironment({
             headers: bearerHeaders(input.clerkToken),
@@ -928,6 +977,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     ),
     getT3ChatLink: Effect.fnUntraced(
       function* (input) {
+        const { client } = yield* resolveTarget;
         return yield* client.client
           .getT3ChatLink({ headers: bearerHeaders(input.clerkToken) })
           .pipe(
@@ -940,6 +990,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     ),
     createT3ChatLinkRequest: Effect.fnUntraced(
       function* (input) {
+        const { client } = yield* resolveTarget;
         return yield* client.client
           .createT3ChatLinkRequest({ headers: bearerHeaders(input.clerkToken) })
           .pipe(
@@ -952,6 +1003,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     ),
     unlinkT3Chat: Effect.fnUntraced(
       function* (input) {
+        const { client } = yield* resolveTarget;
         return yield* client.client
           .unlinkT3Chat({ headers: bearerHeaders(input.clerkToken) })
           .pipe(
@@ -971,9 +1023,10 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
           {
             clerkToken: input.clerkToken,
             scopes: input.scopes,
-            target: dpopProofTargets.getEnvironmentStatus(input.environmentId),
+            buildTarget: (urlBuilder) =>
+              dpopProofTargets.getEnvironmentStatus(urlBuilder, input.environmentId),
           },
-          (authorization) =>
+          (authorization, client) =>
             client.dpopClient
               .getEnvironmentStatus({
                 headers: dpopHeaders(authorization),
@@ -997,9 +1050,10 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
           {
             clerkToken: input.clerkToken,
             scopes: input.scopes,
-            target: dpopProofTargets.connectEnvironment(input.environmentId),
+            buildTarget: (urlBuilder) =>
+              dpopProofTargets.connectEnvironment(urlBuilder, input.environmentId),
           },
-          (authorization) => {
+          (authorization, client) => {
             const payload: RelayEnvironmentConnectRequest = {
               ...(input.deviceId ? { deviceId: input.deviceId } : {}),
               clientKeyThumbprint: authorization.thumbprint,
@@ -1025,9 +1079,9 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
         return yield* mobileRegistrationRequest(
           {
             clerkToken: input.clerkToken,
-            target: dpopProofTargets.registerDevice(),
+            buildTarget: (urlBuilder) => dpopProofTargets.registerDevice(urlBuilder),
           },
-          (authorization) =>
+          (authorization, client) =>
             client.mobile
               .registerDevice({
                 headers: dpopHeaders(authorization),
@@ -1047,9 +1101,10 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
         return yield* mobileRegistrationRequest(
           {
             clerkToken: input.clerkToken,
-            target: dpopProofTargets.unregisterDevice(input.deviceId),
+            buildTarget: (urlBuilder) =>
+              dpopProofTargets.unregisterDevice(urlBuilder, input.deviceId),
           },
-          (authorization) =>
+          (authorization, client) =>
             client.mobile
               .unregisterDevice({
                 headers: dpopHeaders(authorization),
@@ -1069,9 +1124,9 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
         return yield* mobileRegistrationRequest(
           {
             clerkToken: input.clerkToken,
-            target: dpopProofTargets.getAgentActivitySnapshot(),
+            buildTarget: (urlBuilder) => dpopProofTargets.getAgentActivitySnapshot(urlBuilder),
           },
-          (authorization) =>
+          (authorization, client) =>
             client.mobile
               .getAgentActivitySnapshot({
                 headers: dpopHeaders(authorization),
@@ -1090,9 +1145,9 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
         return yield* mobileRegistrationRequest(
           {
             clerkToken: input.clerkToken,
-            target: dpopProofTargets.registerLiveActivity(),
+            buildTarget: (urlBuilder) => dpopProofTargets.registerLiveActivity(urlBuilder),
           },
-          (authorization) =>
+          (authorization, client) =>
             client.mobile
               .registerLiveActivity({
                 headers: dpopHeaders(authorization),

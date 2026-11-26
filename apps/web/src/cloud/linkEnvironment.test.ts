@@ -26,7 +26,11 @@ import { ManagedRelay } from "@t3tools/client-runtime/relay";
 import { layerRemoteHttpClient } from "@t3tools/client-runtime/rpc";
 import { __resetDesktopPrimaryAuthForTests } from "../environments/primary/desktopAuth";
 
-import { readCloudLinkState, unlinkEnvironmentFromCloud } from "./linkEnvironment";
+import {
+  linkEnvironmentToCloud,
+  readCloudLinkState,
+  unlinkEnvironmentFromCloud,
+} from "./linkEnvironment";
 
 const TARGET = {
   environmentId: "environment-1",
@@ -75,17 +79,25 @@ function layerRelay() {
 }
 
 function layerRegistry(options?: {
-  readonly status?: { readonly status: "available"; readonly version: string };
+  readonly status?:
+    | { readonly status: "available"; readonly version: string }
+    | { readonly status: "missing"; readonly version: string };
   readonly installEvents?: ReadonlyArray<RelayClientInstallProgressEvent>;
+  readonly onGetRelayClientStatus?: () => void;
+  readonly onInstallRelayClient?: () => void;
 }) {
   return Layer.effect(
     EnvironmentRegistry.EnvironmentRegistry,
     Effect.gen(function* () {
       const client = {
-        [WS_METHODS.cloudGetRelayClientStatus]: () =>
-          Effect.succeed(options?.status ?? { status: "available", version: "2026.6.0" }),
-        [WS_METHODS.cloudInstallRelayClient]: () =>
-          Stream.fromIterable(options?.installEvents ?? []),
+        [WS_METHODS.cloudGetRelayClientStatus]: () => {
+          options?.onGetRelayClientStatus?.();
+          return Effect.succeed(options?.status ?? { status: "available", version: "2026.6.0" });
+        },
+        [WS_METHODS.cloudInstallRelayClient]: () => {
+          options?.onInstallRelayClient?.();
+          return Stream.fromIterable(options?.installEvents ?? []);
+        },
       } as unknown as RpcSession["client"];
       const session: RpcSession = {
         client,
@@ -279,9 +291,121 @@ describe("web cloud link environment client", () => {
       expect(error).toMatchObject({
         _tag: "CloudEnvironmentLinkError",
         message:
-          "Disconnected locally, but T3 Connect did not confirm it removed this environment: Relay encountered an internal error (upstream_unavailable).",
+          "Disconnected locally, but Luna Connect did not confirm it removed this environment: Relay encountered an internal error (upstream_unavailable).",
         traceId: "trace-unlink",
       });
     }),
+  );
+
+  it.effect(
+    "skips downloading cloudflared in lunacode mode even when managed tunnels are enabled and relay client is missing",
+    () =>
+      Effect.gen(function* () {
+        vi.stubEnv("VITE_LUNACODE_AUTH_URL", "https://relay.example.test");
+        vi.stubEnv("VITE_LUNACODE_CONNECT_URL", "");
+        vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
+
+        let statusChecks = 0;
+        let installCalls = 0;
+        let linkProofProviderKind: string | undefined;
+        let relayConfigProviderKind: string | undefined;
+
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const rawBody =
+            typeof init?.body === "string"
+              ? init.body
+              : init?.body instanceof Uint8Array
+                ? new TextDecoder().decode(init.body)
+                : typeof input !== "string" && !(input instanceof URL)
+                  ? await input.clone().text()
+                  : "";
+          const parsedBody = rawBody ? (JSON.parse(rawBody) as Record<string, unknown>) : {};
+
+          if (url === "https://relay.example.test/v1/client/environment-link-challenges") {
+            return Response.json({
+              challenge: "challenge-jwt",
+              expiresAt: "2030-01-01T00:00:00.000Z",
+            });
+          }
+          if (url === "http://127.0.0.1:3000/api/connect/link-proof") {
+            linkProofProviderKind = (parsedBody.endpoint as { providerKind?: string } | undefined)
+              ?.providerKind;
+            return Response.json("signed-link-proof");
+          }
+          if (url === "https://relay.example.test/v1/client/environment-links") {
+            return Response.json({
+              ok: true,
+              cloudUserId: "user-1",
+              environmentId: TARGET.environmentId,
+              endpoint: {
+                httpBaseUrl: "https://env-1.example.test",
+                wsBaseUrl: "wss://env-1.example.test",
+                providerKind: "t3_relay",
+              },
+              endpointRuntime: {
+                providerKind: "t3_relay",
+                connectorToken: "lct_test",
+                tunnelId: "tun_test",
+                tunnelName: "lunacode-test",
+              },
+              relayIssuer: "https://relay.example.test",
+              environmentCredential: "lce_test",
+              cloudMintPublicKey: "pem-public-key",
+            });
+          }
+          if (url === "http://127.0.0.1:3000/api/connect/relay-config") {
+            relayConfigProviderKind = (
+              parsedBody.endpointRuntime as { providerKind?: string } | null | undefined
+            )?.providerKind;
+            return Response.json({
+              ok: true,
+              endpointRuntimeStatus: {
+                status: "running",
+                providerKind: "t3_relay",
+                pid: 123,
+              },
+            });
+          }
+          return Response.json({ error: `unexpected url ${url}` }, { status: 404 });
+        });
+
+        vi.stubGlobal("fetch", fetchMock);
+        vi.stubGlobal("window", {
+          location: { origin: "t3code://app" },
+          desktopBridge: {
+            getLocalEnvironmentBearerToken: vi.fn().mockResolvedValue("desktop-bearer-token"),
+          } as unknown as DesktopBridge,
+        });
+
+        yield* withServices(
+          linkEnvironmentToCloud({
+            target: { environmentId: EnvironmentId.make(TARGET.environmentId) },
+            clerkToken: "luna-token",
+            mode: "managed",
+          }),
+          {
+            status: { status: "missing", version: "2026.6.0" },
+            onGetRelayClientStatus: () => {
+              statusChecks += 1;
+            },
+            onInstallRelayClient: () => {
+              installCalls += 1;
+            },
+          },
+        );
+
+        expect(statusChecks).toBe(0);
+        expect(installCalls).toBe(0);
+        expect(relayClientInstallDialog.requestConfirmation).not.toHaveBeenCalled();
+        expect(linkProofProviderKind).toBe("t3_relay");
+        expect(relayConfigProviderKind).toBe("t3_relay");
+        expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+          "https://relay.example.test/v1/client/environment-link-challenges",
+          "http://127.0.0.1:3000/api/connect/link-proof",
+          "https://relay.example.test/v1/client/environment-links",
+          "http://127.0.0.1:3000/api/connect/relay-config",
+        ]);
+      }),
   );
 });

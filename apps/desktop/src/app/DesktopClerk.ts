@@ -85,6 +85,28 @@ export const desktopClerkFrontendApiHostname = resolveDesktopClerkFrontendApiHos
     : __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__,
 );
 
+declare const __T3CODE_BUILD_LUNACODE_AUTH_URL__: string | undefined;
+declare const __T3CODE_BUILD_LUNACODE_SELF_HOSTED_AUTH__: string | undefined;
+
+function resolveDesktopLunaAuthHostname(authUrl: string | undefined): string | undefined {
+  const normalizedUrl = authUrl?.trim();
+  if (!normalizedUrl) return undefined;
+  return URL.parse(normalizedUrl)?.hostname || undefined;
+}
+
+export const desktopLunaAuthHostname = resolveDesktopLunaAuthHostname(
+  typeof __T3CODE_BUILD_LUNACODE_AUTH_URL__ === "undefined"
+    ? undefined
+    : __T3CODE_BUILD_LUNACODE_AUTH_URL__,
+);
+
+const useSelfHostedLunaAuth =
+  ((typeof __T3CODE_BUILD_LUNACODE_SELF_HOSTED_AUTH__ === "string" &&
+    __T3CODE_BUILD_LUNACODE_SELF_HOSTED_AUTH__ === "1") ||
+    (typeof __T3CODE_BUILD_LUNACODE_AUTH_URL__ === "string" &&
+      __T3CODE_BUILD_LUNACODE_AUTH_URL__.trim().length > 0)) &&
+  !desktopClerkFrontendApiHostname;
+
 function createDesktopClerkBridge(tokenDirectory: string, isDevelopment: boolean) {
   return createClerkBridge({
     storage: storage({ path: tokenDirectory }),
@@ -136,31 +158,33 @@ export const make = Effect.gen(function* () {
     if (handleOpenUrl(url)) event.preventDefault();
   });
 
-  yield* Effect.acquireRelease(
-    Effect.try({
-      try: () =>
-        createDesktopClerkBridge(
-          path.resolve(environment.stateDir, "clerk"),
-          environment.isDevelopment,
-        ),
-      catch: (cause) =>
-        new DesktopClerkBridgeInitializationError({
-          stateDir: environment.stateDir,
-          isDevelopment: environment.isDevelopment,
-          cause,
-        }),
-    }),
-    (bridge) =>
+  if (!useSelfHostedLunaAuth) {
+    yield* Effect.acquireRelease(
       Effect.try({
-        try: () => bridge.cleanup(),
+        try: () =>
+          createDesktopClerkBridge(
+            path.resolve(environment.stateDir, "clerk"),
+            environment.isDevelopment,
+          ),
         catch: (cause) =>
-          new DesktopClerkBridgeCleanupError({
+          new DesktopClerkBridgeInitializationError({
             stateDir: environment.stateDir,
             isDevelopment: environment.isDevelopment,
             cause,
           }),
-      }).pipe(Effect.orDie),
-  );
+      }),
+      (bridge) =>
+        Effect.try({
+          try: () => bridge.cleanup(),
+          catch: (cause) =>
+            new DesktopClerkBridgeCleanupError({
+              stateDir: environment.stateDir,
+              isDevelopment: environment.isDevelopment,
+              cause,
+            }),
+        }).pipe(Effect.orDie),
+    );
+  }
 
   return DesktopClerk.of({
     configure: Effect.gen(function* () {

@@ -77,10 +77,10 @@ async function download(url, file) {
 
 async function install(dir, key) {
   const archive = `t3-${version}-${key}.${process.platform === "win32" ? "zip" : "tar.gz"}`;
-  const base = (
-    process.env.T3CODE_RELEASE_BASE_URL || "https://github.com/pingdotgg/t3code/releases/download"
-  ).replace(/\/+$/, "");
-  const sums = await (await get(`${base}/v${version}/SHA256SUMS`)).text();
+  const defaultBase = "https://github.com/nidao003/lunacode/releases/download";
+  const base = (process.env.T3CODE_RELEASE_BASE_URL || defaultBase).replace(/\/+$/, "");
+  const tag = `${base === defaultBase ? "lunacode-v" : "v"}${version}`;
+  const sums = await (await get(`${base}/${tag}/SHA256SUMS`)).text();
   const expected = /^([0-9a-f]{64})\s+\*?(.+)$/im;
   const line = sums
     .split(/\r?\n/)
@@ -93,7 +93,7 @@ async function install(dir, key) {
   const staging = fs.mkdtempSync(`${dir}.staging-`);
   try {
     const file = path.join(staging, archive);
-    if ((await download(`${base}/v${version}/${archive}`, file)) !== line[1].toLowerCase()) {
+    if ((await download(`${base}/${tag}/${archive}`, file)) !== line[1].toLowerCase()) {
       throw new Error(`checksum mismatch for ${archive}`);
     }
     // Windows' own tar.exe reads zip; a Git-for-Windows tar on PATH cannot.
@@ -179,7 +179,7 @@ async function main() {
   if (!SUPPORTED.includes(key)) {
     throw new Error(
       `no T3 Code CLI build is available for ${key} (supported: ${SUPPORTED.join(", ")}).\n` +
-        "The desktop app is at https://github.com/pingdotgg/t3code/releases",
+        "The desktop app is at https://github.com/nidao003/lunacode/releases",
     );
   }
   const dir = path.join(t3Home(), "runtime", "versions", version);

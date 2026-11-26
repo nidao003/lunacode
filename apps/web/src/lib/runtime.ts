@@ -69,7 +69,7 @@ const layerRuntime = Layer.mergeAll(
   Socket.layerWebSocketConstructorGlobal,
   ClientTracer.layer,
   layerRelayTracing,
-  ManagedRelayLayer.layer(configuredRelayUrl()).pipe(
+  ManagedRelayLayer.layer(configuredRelayUrl).pipe(
     Layer.provide(Layer.mergeAll(layerHttpClient, Dpop.layer)),
   ),
 );

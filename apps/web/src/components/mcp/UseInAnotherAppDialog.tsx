@@ -1,6 +1,11 @@
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
-import { useAuth } from "@clerk/react";
+import {
+  LUNACODE_BRAND_NAME,
+  LUNACODE_CONNECT_NAME,
+  rebrandTextToLunaCode,
+} from "@t3tools/client-runtime/lunacode/brand-display";
 import { useAtomValue } from "@effect/atom-react";
+import { useCloudAuth } from "~/lunacode/cloudAuth";
 import {
   managedCapabilityDenial,
   managedRuntimeModeDenial,
@@ -20,7 +25,8 @@ import { CheckIcon, CopyIcon } from "lucide-react";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
 import * as Result from "effect/Result";
-import { msg, T, useGT, useMessages, Var } from "gt-react";
+import { msg, T, useGT, useLocale, useMessages, Var } from "gt-react";
+import { DEFAULT_LOCALE } from "~/i18n/locales";
 import { m } from "~/i18n/messages";
 import { type ReactNode, useEffect, useEffectEvent, useState } from "react";
 
@@ -86,7 +92,7 @@ export function UseInAnotherAppDialogHost() {
 function UseInAnotherAppDialog({ requested }: { readonly requested: EnvironmentId | null }) {
   const { environment, label } = useAccessEnvironment(requested);
   const gt = useGT();
-  const title = `${gt("Use T3 Code in another app (MCP)")} · ${label ?? "T3 Code"}`;
+  const title = `${rebrandTextToLunaCode(gt("Use T3 Code in another app (MCP)"))} · ${label ?? LUNACODE_BRAND_NAME}`;
   return (
     <Dialog open onOpenChange={(open) => (open ? undefined : close())}>
       <WizardPopup>
@@ -100,7 +106,7 @@ function UseInAnotherAppDialog({ requested }: { readonly requested: EnvironmentI
                 title={
                   environment === null
                     ? gt("Connect to an environment first.")
-                    : gt("T3 Connect is not available in this build.")
+                    : rebrandTextToLunaCode(gt("T3 Connect is not available in this build."))
                 }
               />
             </WizardPanel>
@@ -260,7 +266,7 @@ function useGrantableLevels(environment: EnvironmentPresentation) {
 
 function useGate(environment: EnvironmentPresentation) {
   const environmentId = environment.environmentId;
-  const { isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  const { isSignedIn } = useCloudAuth({ treatPendingAsSignedOut: false });
   const controller = useCloudLinkController(environmentId);
   const canReadRelay = useEnvironmentScope(environmentId, AuthRelayReadScope);
   const thisMachine =
@@ -394,6 +400,7 @@ function GateScreen({
 }) {
   const name = environment.label;
   const gt = useGT();
+  const locale = useLocale();
   const turnOnHere = useT3ConnectTurnOn(environment.environmentId);
   const { openAuthPrompt } = useT3ConnectAuthPrompt();
   const retry = (onClick: () => void) => (
@@ -401,29 +408,43 @@ function GateScreen({
       <T>Check again</T>
     </Button>
   );
-  const offlineTitle = gt("{environment}''s T3 Connect is offline", { environment: name });
-  const cannotCheckTitle = gt("Can't check T3 Connect on {environment}", { environment: name });
+  const offlineTitle = rebrandTextToLunaCode(
+    gt("{environment}''s T3 Connect is offline", { environment: name }),
+  );
+  const cannotCheckTitle = rebrandTextToLunaCode(
+    gt("Can't check T3 Connect on {environment}", { environment: name }),
+  );
   const checkAgain = retry(() => void check());
   switch (gate.kind) {
     case "checking":
       return (
         <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
           <Spinner size="sm" tone="muted" />
-          <T>Checking T3 Connect…</T>
+          {locale === DEFAULT_LOCALE ? (
+            // oxlint-disable-next-line t3code/no-untranslated-copy -- LunaCode English brand override matching <T> sibling
+            `Checking ${LUNACODE_CONNECT_NAME}…`
+          ) : (
+            <T>Checking T3 Connect…</T>
+          )}
         </p>
       );
     case "sign-in":
       return (
         <GateMessage
-          title={gt("Sign in to T3 Connect")}
+          title={rebrandTextToLunaCode(gt("Sign in to T3 Connect"))}
           lines={[
             gt(
               "Apps like Poke and Claude run in the cloud. They need a public address to reach {environment}.",
               { environment: name },
             ),
-            gt("T3 Connect gives {environment} that address. Each app still needs your approval.", {
-              environment: name,
-            }),
+            rebrandTextToLunaCode(
+              gt(
+                "T3 Connect gives {environment} that address. Each app still needs your approval.",
+                {
+                  environment: name,
+                },
+              ),
+            ),
           ]}
         >
           {/* Clerk's sign-in is its own modal, so this dialog closes first. */}
@@ -433,7 +454,12 @@ function GateScreen({
               openAuthPrompt();
             }}
           >
-            <T>Sign in to T3 Connect</T>
+            {locale === DEFAULT_LOCALE ? (
+              // oxlint-disable-next-line t3code/no-untranslated-copy -- LunaCode English brand override matching <T> sibling
+              `Sign in to ${LUNACODE_CONNECT_NAME}`
+            ) : (
+              <T>Sign in to T3 Connect</T>
+            )}
           </Button>
         </GateMessage>
       );
@@ -446,7 +472,13 @@ function GateScreen({
         </GateMessage>
       );
     case "update":
-      return <GateMessage title={gt("Update T3 Code on {environment}", { environment: name })} />;
+      return (
+        <GateMessage
+          title={rebrandTextToLunaCode(
+            gt("Update T3 Code on {environment}", { environment: name }),
+          )}
+        />
+      );
     case "no-relay-read":
       return (
         <GateMessage
@@ -481,7 +513,9 @@ function GateScreen({
       }
       return (
         <GateMessage
-          title={gt("Turn on T3 Connect for {environment}", { environment: name })}
+          title={rebrandTextToLunaCode(
+            gt("Turn on T3 Connect for {environment}", { environment: name }),
+          )}
           lines={[
             gt("{environment} gets a public https address, with no router setup.", {
               environment: name,
@@ -500,7 +534,12 @@ function GateScreen({
               {tunnelLimit !== null ? (
                 <>
                   <p className="text-sm text-destructive-foreground">
-                    <T>Your T3 Connect account is out of tunnels.</T>
+                    {locale === DEFAULT_LOCALE ? (
+                      // oxlint-disable-next-line t3code/no-untranslated-copy -- LunaCode English brand override matching <T> sibling
+                      `Your ${LUNACODE_CONNECT_NAME} account is out of tunnels.`
+                    ) : (
+                      <T>Your T3 Connect account is out of tunnels.</T>
+                    )}
                   </p>
                   <ManageAccessButton environment={environment} label={gt("Manage tunnels")} />
                 </>
