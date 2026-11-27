@@ -825,6 +825,7 @@ jobs:
           mkdir -p release-publish
           shopt -s nullglob
           for file in release/*.exe release/*.blockmap release/latest.yml release/nightly.yml release/*-win.yml; do
+            [[ -f "$file" ]] || continue
             cp "$file" release-publish/
           done
 
@@ -1253,11 +1254,9 @@ jobs:
           - **Android (`.apk`)**: Sideload `LunaCode-mobile-*-arm64-v8a-release.apk`.
           - **iOS (`.ipa`)**: Unsigned sideload-ready IPA (`com.nidao003.lunacode.mobile`). Install via AltStore, SideStore, Sideloadly (re-signing with your Apple ID), or TrollStore.
           - **Self-Hosted Backend (`Docker`)**: Multi-arch image (`linux/amd64`, `linux/arm64`) published to Docker Hub:
-            ```bash
-            docker pull nidao008/lunacode-connect:${RELEASE_VERSION}
-            docker pull nidao008/lunacode-connect:latest
-            ```
-
+          EOF
+          printf '  ```bash\n  docker pull nidao008/lunacode-connect:%s\n  docker pull nidao008/lunacode-connect:latest\n  ```\n\n' "$RELEASE_VERSION" >> release-notes.md
+          cat >> release-notes.md <<'EOF'
           Verify downloads against `SHA256SUMS`.
 
           ---
