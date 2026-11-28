@@ -90,8 +90,6 @@ import { WorkflowToolkit } from "./toolkits/workflow/tools.ts";
 import * as WorkflowHandlers from "./toolkits/workflow/handlers.ts";
 import { FlowToolkit } from "./toolkits/workflow/flowTools.ts";
 import * as FlowHandlers from "./toolkits/workflow/flowHandlers.ts";
-import { BotToolkit } from "./toolkits/bots/botTools.ts";
-import * as BotHandlers from "./toolkits/bots/botHandlers.ts";
 import * as ThreadHandlers from "./toolkits/thread/handlers.ts";
 import * as ThreadMetadataMcpService from "./ThreadMetadataMcpService.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
@@ -1506,7 +1504,6 @@ export const layerOrchestratorToolkit = toolkitRegistration(
 export const layerThreadToolkit = toolkitRegistration(ThreadToolkit, ThreadHandlers.layer);
 const layerWorkflowToolkit = toolkitRegistration(WorkflowToolkit, WorkflowHandlers.layer);
 const layerFlowToolkit = toolkitRegistration(FlowToolkit, FlowHandlers.layer);
-const layerBotToolkit = toolkitRegistration(BotToolkit, BotHandlers.layer);
 
 export const layerMessageToolkit = toolkitRegistration(MessageToolkit, MessageHandlers.layer);
 
@@ -1605,7 +1602,6 @@ export const layerTools = Layer.mergeAll(
   layerThreadToolkit,
   layerWorkflowToolkit,
   layerFlowToolkit,
-  layerBotToolkit,
   layerAttachmentToolkit,
   layerProjectRegistration,
   layerFeedbackToolkit,

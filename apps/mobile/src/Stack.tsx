@@ -144,7 +144,6 @@ import { UsageRouteScreen } from "./features/usage/UsageRouteScreen";
 import { WorkflowRunRouteScreen } from "./features/workflows/WorkflowRunRouteScreen";
 import { WorkflowStepSheet } from "./features/workflows/WorkflowStepSheet";
 import { LunaMobileFlowStudioScreen } from "./lunacode/workflows/LunaMobileFlowStudioScreen";
-import { LunaMobileBotsScreen } from "./lunacode/bots/LunaMobileBotsScreen";
 import { SettingsAboutRouteScreen } from "./features/settings/SettingsAboutRouteScreen";
 import { SettingsNotificationsRouteScreen } from "./features/settings/SettingsNotificationsRouteScreen";
 import { SettingsRouteScreen } from "./features/settings/SettingsRouteScreen";
@@ -804,11 +803,6 @@ const RootStackConfig = createWorkspaceStackNavigator({
     LunaFlowStudio: createNativeStackScreen({
       screen: LunaMobileFlowStudioScreen,
       linking: { path: "workflows/:environmentId/studio/:fileName" },
-      options: pageRoute(),
-    }),
-    LunaBots: createNativeStackScreen({
-      screen: LunaMobileBotsScreen,
-      linking: { path: "bots/:environmentId?" },
       options: pageRoute(),
     }),
     ThreadBackgroundWork: createNativeStackScreen({

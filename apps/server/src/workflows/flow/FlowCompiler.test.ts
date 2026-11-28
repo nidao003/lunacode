@@ -14,6 +14,7 @@ import WorkflowSkippedRunsMigration from "../../persistence/Migrations/113_Workf
 import WorkflowRunTagsMigration from "../../persistence/Migrations/115_WorkflowRunTags.ts";
 import WorkflowMailSenderMigration from "../../persistence/Migrations/117_WorkflowMailSender.ts";
 import WorkflowPoolsMigration from "../../persistence/Migrations/118_WorkflowPools.ts";
+import WorkflowRunSubjectMigration from "../../persistence/Migrations/119_WorkflowRunSubject.ts";
 import { WorkflowAgents } from "../WorkflowAgents.ts";
 import * as WorkflowEngine from "../WorkflowEngine.ts";
 import * as Workflows from "../Workflows.ts";
@@ -205,6 +206,7 @@ it.effect(
           Effect.andThen(WorkflowRunTagsMigration),
           Effect.andThen(WorkflowMailSenderMigration),
           Effect.andThen(WorkflowPoolsMigration),
+          Effect.andThen(WorkflowRunSubjectMigration),
         ),
         dbLayer,
       );
@@ -396,6 +398,7 @@ it.effect("precheck non-zero exit skips automatic run without invoking agents", 
         Effect.andThen(WorkflowRunTagsMigration),
         Effect.andThen(WorkflowMailSenderMigration),
         Effect.andThen(WorkflowPoolsMigration),
+        Effect.andThen(WorkflowRunSubjectMigration),
       ),
       dbLayer,
     );

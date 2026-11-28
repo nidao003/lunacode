@@ -55,10 +55,6 @@
       "types": "./src/lunacode/workflowFlow.logic.ts",
       "default": "./src/lunacode/workflowFlow.logic.ts"
     },
-    "./lunacode/bots": {
-      "types": "./src/lunacode/bots.logic.ts",
-      "default": "./src/lunacode/bots.logic.ts"
-    },
     "./locales": {
       "types": "./src/locales.ts",
       "default": "./src/locales.ts"

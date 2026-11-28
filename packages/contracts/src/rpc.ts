@@ -451,28 +451,6 @@ import {
   WorkflowRunsSubscribeInput,
 } from "./workflow.ts";
 import {
-  BotClusterRequestError,
-  BotClusterSnapshot,
-  BotDeleteInput,
-  BotDeleteResult,
-  BotDispatchWorkerInput,
-  BotDispatchWorkerResult,
-  BotEnsureHomeThreadInput,
-  BotEnsureHomeThreadResult,
-  BotSendMessageInput,
-  BotSendMessageResult,
-  BotsSeedPresetsInput,
-  BotsSeedPresetsResult,
-  BotsSubscribeInput,
-  BotTask,
-  BotTaskAnswerInput,
-  BotTaskCommentInput,
-  BotTaskDeleteInput,
-  BotTaskUpsertInput,
-  BotUpsertInput,
-  PersistentBot,
-} from "./lunacodeBots.ts";
-import {
   ScheduledTaskDeleteInput,
   ScheduledTaskDeleteResult,
   ScheduledTaskError,
@@ -685,18 +663,6 @@ export const WS_METHODS = {
   workflowsGetDefinition: "workflows.getDefinition",
   workflowsSaveDefinition: "workflows.saveDefinition",
   workflowsDeleteDefinition: "workflows.deleteDefinition",
-
-  botsSubscribe: "bots.subscribe",
-  botsUpsert: "bots.upsert",
-  botsDelete: "bots.delete",
-  botsEnsureHomeThread: "bots.ensureHomeThread",
-  botsDispatchWorker: "bots.dispatchWorker",
-  botsSendMessage: "bots.sendMessage",
-  botsSeedPresets: "bots.seedPresets",
-  botsTaskUpsert: "bots.taskUpsert",
-  botsTaskComment: "bots.taskComment",
-  botsTaskAnswer: "bots.taskAnswer",
-  botsTaskDelete: "bots.taskDelete",
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -2477,73 +2443,6 @@ const WsWorkflowsDeleteDefinitionRpc = Rpc.make(WS_METHODS.workflowsDeleteDefini
   error: EnvironmentAuthorizationError,
 });
 
-const WsBotsSubscribeRpc = Rpc.make(WS_METHODS.botsSubscribe, {
-  payload: BotsSubscribeInput,
-  success: BotClusterSnapshot,
-  error: EnvironmentAuthorizationError,
-  stream: true,
-});
-
-const WsBotsUpsertRpc = Rpc.make(WS_METHODS.botsUpsert, {
-  payload: BotUpsertInput,
-  success: PersistentBot,
-  error: Schema.Union([BotClusterRequestError, EnvironmentAuthorizationError]),
-});
-
-const WsBotsDeleteRpc = Rpc.make(WS_METHODS.botsDelete, {
-  payload: BotDeleteInput,
-  success: BotDeleteResult,
-  error: Schema.Union([BotClusterRequestError, EnvironmentAuthorizationError]),
-});
-
-const WsBotsEnsureHomeThreadRpc = Rpc.make(WS_METHODS.botsEnsureHomeThread, {
-  payload: BotEnsureHomeThreadInput,
-  success: BotEnsureHomeThreadResult,
-  error: Schema.Union([BotClusterRequestError, EnvironmentAuthorizationError]),
-});
-
-const WsBotsDispatchWorkerRpc = Rpc.make(WS_METHODS.botsDispatchWorker, {
-  payload: BotDispatchWorkerInput,
-  success: BotDispatchWorkerResult,
-  error: Schema.Union([BotClusterRequestError, EnvironmentAuthorizationError]),
-});
-
-const WsBotsSendMessageRpc = Rpc.make(WS_METHODS.botsSendMessage, {
-  payload: BotSendMessageInput,
-  success: BotSendMessageResult,
-  error: Schema.Union([BotClusterRequestError, EnvironmentAuthorizationError]),
-});
-
-const WsBotsSeedPresetsRpc = Rpc.make(WS_METHODS.botsSeedPresets, {
-  payload: BotsSeedPresetsInput,
-  success: BotsSeedPresetsResult,
-  error: Schema.Union([BotClusterRequestError, EnvironmentAuthorizationError]),
-});
-
-const WsBotsTaskUpsertRpc = Rpc.make(WS_METHODS.botsTaskUpsert, {
-  payload: BotTaskUpsertInput,
-  success: BotTask,
-  error: Schema.Union([BotClusterRequestError, EnvironmentAuthorizationError]),
-});
-
-const WsBotsTaskCommentRpc = Rpc.make(WS_METHODS.botsTaskComment, {
-  payload: BotTaskCommentInput,
-  success: BotTask,
-  error: Schema.Union([BotClusterRequestError, EnvironmentAuthorizationError]),
-});
-
-const WsBotsTaskAnswerRpc = Rpc.make(WS_METHODS.botsTaskAnswer, {
-  payload: BotTaskAnswerInput,
-  success: BotTask,
-  error: Schema.Union([BotClusterRequestError, EnvironmentAuthorizationError]),
-});
-
-const WsBotsTaskDeleteRpc = Rpc.make(WS_METHODS.botsTaskDelete, {
-  payload: BotTaskDeleteInput,
-  success: BotDeleteResult,
-  error: Schema.Union([BotClusterRequestError, EnvironmentAuthorizationError]),
-});
-
 const WsScheduledTasksSubscribeRpc = Rpc.make(WS_METHODS.scheduledTasksSubscribe, {
   payload: ScheduledTaskListInput,
   success: ScheduledTaskListResult,
@@ -2731,17 +2630,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkflowsGetDefinitionRpc,
   WsWorkflowsSaveDefinitionRpc,
   WsWorkflowsDeleteDefinitionRpc,
-  WsBotsSubscribeRpc,
-  WsBotsUpsertRpc,
-  WsBotsDeleteRpc,
-  WsBotsEnsureHomeThreadRpc,
-  WsBotsDispatchWorkerRpc,
-  WsBotsSendMessageRpc,
-  WsBotsSeedPresetsRpc,
-  WsBotsTaskUpsertRpc,
-  WsBotsTaskCommentRpc,
-  WsBotsTaskAnswerRpc,
-  WsBotsTaskDeleteRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksUpsertRpc,
   WsScheduledTasksSetEnabledRpc,

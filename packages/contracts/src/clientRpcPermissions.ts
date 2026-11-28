@@ -91,17 +91,6 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.workflowsAnswer]: AuthOrchestrationOperateScope,
   [WS_METHODS.workflowsResume]: AuthOrchestrationOperateScope,
   [WS_METHODS.workflowsCancel]: AuthOrchestrationOperateScope,
-  // Persistent Bots & Tasks mutations launch/steer threads or update task state.
-  [WS_METHODS.botsUpsert]: AuthOrchestrationOperateScope,
-  [WS_METHODS.botsDelete]: AuthOrchestrationOperateScope,
-  [WS_METHODS.botsEnsureHomeThread]: AuthOrchestrationOperateScope,
-  [WS_METHODS.botsDispatchWorker]: AuthOrchestrationOperateScope,
-  [WS_METHODS.botsSendMessage]: AuthOrchestrationOperateScope,
-  [WS_METHODS.botsSeedPresets]: AuthOrchestrationOperateScope,
-  [WS_METHODS.botsTaskUpsert]: AuthOrchestrationOperateScope,
-  [WS_METHODS.botsTaskComment]: AuthOrchestrationOperateScope,
-  [WS_METHODS.botsTaskAnswer]: AuthOrchestrationOperateScope,
-  [WS_METHODS.botsTaskDelete]: AuthOrchestrationOperateScope,
   // The server runs this file: saving it is running code there, as a terminal does.
   [WS_METHODS.workflowsSaveDefinition]: AuthTerminalOperateScope,
   [WS_METHODS.workflowsDeleteDefinition]: AuthTerminalOperateScope,

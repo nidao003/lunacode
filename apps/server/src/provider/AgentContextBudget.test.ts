@@ -44,7 +44,6 @@ import { ProjectSetupScriptRunner } from "../project/ProjectSetupScriptRunner.ts
 import { IssueService } from "../issue/IssueService.ts";
 import { PullRequestReviewGuideService } from "../pullRequest/PullRequestReviewGuideService.ts";
 import { PullRequestService } from "../pullRequest/PullRequestService.ts";
-import * as BotClusterService from "../lunacode/bots/BotClusterService.ts";
 import { ScheduledTaskService } from "../scheduledTasks/ScheduledTaskService.ts";
 import { SecretRequests } from "../secrets/SecretRequests.ts";
 import { FeedbackStore } from "../feedback/FeedbackStore.ts";
@@ -82,7 +81,6 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(PreviewManager)({}),
   Layer.mock(Workflows)({}),
   Layer.mock(WorkflowRuntime.WorkflowDefinitions)({}),
-  Layer.mock(BotClusterService.BotClusterService)({}),
   Layer.mock(ProjectCloneTracker)({}),
   Layer.mock(ProjectService)({}),
   Layer.mock(ProjectSetupScriptRunner)({}),

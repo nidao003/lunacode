@@ -1514,19 +1514,6 @@ export function createServerEnvironmentAtoms<R, E>(
       sources.map(({ environmentId, atom }) => ({ environmentId, result: get(atom) })),
     ).pipe(Atom.withLabel(`environment-data:server:workflows:live-across:${environmentIdsKey}`));
   });
-  const botsLive = createEnvironmentRpcSubscriptionAtomFamily(runtime, {
-    label: "environment-data:server:bots:live",
-    tag: WS_METHODS.botsSubscribe,
-  });
-  const botsLiveAcross = Atom.family((environmentIdsKey: string) => {
-    const sources = (JSON.parse(environmentIdsKey) as EnvironmentId[]).map((environmentId) => ({
-      environmentId,
-      atom: botsLive({ environmentId, input: {} }),
-    }));
-    return Atom.make((get) =>
-      sources.map(({ environmentId, atom }) => ({ environmentId, result: get(atom) })),
-    ).pipe(Atom.withLabel(`environment-data:server:bots:live-across:${environmentIdsKey}`));
-  });
   // One change of a run or file at a time per target, so a double click does not act twice.
   const workflowRunConcurrency = {
     mode: "singleFlight" as const,
@@ -1702,8 +1689,6 @@ export function createServerEnvironmentAtoms<R, E>(
     }),
     workflowsLive,
     workflowsLiveAcross,
-    botsLive,
-    botsLiveAcross,
     workflowRun: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:workflows:run",
       tag: WS_METHODS.workflowsGet,
@@ -2072,58 +2057,6 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.workflowsDeleteDefinition,
       scheduler: workflowDefinitionScheduler,
       concurrency: workflowDefinitionConcurrency,
-    }),
-    upsertBot: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:bots:upsert",
-      tag: WS_METHODS.botsUpsert,
-    }),
-    deleteBot: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:bots:delete",
-      tag: WS_METHODS.botsDelete,
-    }),
-    ensureBotHomeThread: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:bots:ensure-home-thread",
-      tag: WS_METHODS.botsEnsureHomeThread,
-      concurrency: {
-        mode: "singleFlight",
-        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.botId]),
-      },
-    }),
-    dispatchBotWorker: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:bots:dispatch-worker",
-      tag: WS_METHODS.botsDispatchWorker,
-    }),
-    sendBotMessage: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:bots:send-message",
-      tag: WS_METHODS.botsSendMessage,
-    }),
-    seedBotPresets: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:bots:seed-presets",
-      tag: WS_METHODS.botsSeedPresets,
-      concurrency: {
-        mode: "singleFlight",
-        key: ({ environmentId }) => environmentId,
-      },
-    }),
-    upsertBotTask: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:bots:task-upsert",
-      tag: WS_METHODS.botsTaskUpsert,
-    }),
-    commentBotTask: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:bots:task-comment",
-      tag: WS_METHODS.botsTaskComment,
-    }),
-    answerBotTask: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:bots:task-answer",
-      tag: WS_METHODS.botsTaskAnswer,
-      concurrency: {
-        mode: "singleFlight",
-        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.taskId]),
-      },
-    }),
-    deleteBotTask: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:bots:task-delete",
-      tag: WS_METHODS.botsTaskDelete,
     }),
     createGuestShare: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:guest-share:create",

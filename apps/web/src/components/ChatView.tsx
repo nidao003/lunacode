@@ -26,7 +26,6 @@ import {
 import { deriveLunaContextTelemetry } from "../lunacode/contextTelemetry";
 import { composerOwnsPendingApprovals } from "../lunacode/approvalPresentation";
 import { buildDeterministicHandoff } from "../lunacode/handoffBuilder";
-import { LunaBotRightDrawer, LunaBotThreadBanner } from "../lunacode/bots/LunaBotThreadOverlay";
 import { usePullRequestDraftThread } from "./chat/usePullRequestDraftThread";
 import { usePullRequestLinking } from "../hooks/usePullRequestLinking";
 import { useComposerSelection } from "./chat/useComposerSelection";
@@ -3508,7 +3507,6 @@ export default function ChatView(props: ChatViewProps) {
     (folders: Parameters<ChatComposerHandle["addDroppedFolders"]>[0]) =>
       composerRef.current?.addDroppedFolders(folders),
   );
-  const [botDrawerOpen, setBotDrawerOpen] = useState(true);
   // Above the early return, where React Compiler can cache it for the side chat pane.
   const sideChatParentPanel = {
     hostRef: scopeThreadRef(environmentId, threadId),
@@ -3689,15 +3687,6 @@ export default function ChatView(props: ChatViewProps) {
             />
           </header>
         )}
-
-        {!embedded ? (
-          <LunaBotThreadBanner
-            environmentId={activeThread.environmentId}
-            threadId={activeThread.id}
-            drawerOpen={botDrawerOpen}
-            onToggleDrawer={() => setBotDrawerOpen((prev) => !prev)}
-          />
-        ) : null}
 
         <div className="relative flex min-h-0 min-w-0 flex-1">
           <ThreadFindCanvas
@@ -4337,16 +4326,6 @@ export default function ChatView(props: ChatViewProps) {
           />
         )}
       </div>
-
-      {!embedded ? (
-        <LunaBotRightDrawer
-          environmentId={activeThread.environmentId}
-          threadId={activeThread.id}
-          open={botDrawerOpen}
-          yieldToNativeRightPanel={rightPanelOpen}
-          onClose={() => setBotDrawerOpen(false)}
-        />
-      ) : null}
 
       {rightPanelPresent && activeThreadRef && !embedded ? (
         <ChatRightPanel
