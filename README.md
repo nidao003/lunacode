@@ -29,22 +29,23 @@ LunaCode runs the coding agents already installed on your machine and unifies th
 
 ### Side-by-Side Comparison
 
-| Area                                   | Upstream T3 Code (`pingdotgg/t3code`)                     | LunaCode (`nidao003/lunacode`)                                                                                                                                                                                                      |
-| -------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **App Identity & Data Coexistence**    | `T3 Code` bundle ID, `userData`, and single-instance lock | Independent `LunaCode` branding & Chang'e artwork (`com.nidao003.lunacode` / `com.nidao003.lunacode.mobile`), isolated `lunacode-v2` userData, dual-launch guard alongside official `T3 Code (Beta).app`, shared `~/.t3/userdata`   |
-| **Telemetry & Crash Reporting**        | PostHog analytics, mobile Observe & Axiom OTLP enabled    | **Disabled by default** (`T3CODE_TELEMETRY_ENABLED=false`, Observe disabled, Axiom requires explicit opt-in token)                                                                                                                  |
-| **Cloud Auth & Remote Tunnel Backend** | Clerk (`clerk.t3.codes`) + Cloudflare Workers/Zero Trust  | **Self-hosted all-in-one Docker backend** (`nidao008/lunacode-connect`) using Node 22 + `node:sqlite`, OAuth2 PKCE/Device Code, Relay v1, built-in binary WS `"t3_relay"` tunnel, `/admin` console, webhook queue & push dispatcher |
-| **Client Backend Configuration**       | Build-time hosted URL                                     | **Zero hardcoded private domains** in public builds; runtime server URL switcher UI across Desktop, Web, and Mobile                                                                                                                 |
-| **Remote + LAN Routing**               | Relay or manual setup                                     | Public access via `t3_relay` HTTPS/WSS + automatic LAN return (`ROUTE_KIND_RANK.lan = 1`), `.local` mDNS discovery (`scutil --get LocalHostName`), custom LAN domain pairing UI                                                     |
-| **Context & Cache Observability**      | Basic context meter                                       | Zero-token footer bar (context window, warning threshold, cache hit %, TTL countdown, `tok/s`), detailed Context & Cache Inspector (`Web` & `Mobile`)                                                                               |
-| **Compaction & Handoff**               | Standard `/compact`                                       | Optional opt-in structured `/compact` template + deterministic zero-LLM thread handoff draft                                                                                                                                        |
-| **Approvals & Git History**            | Inline approval log / diff view                           | Prominent single composer approval confirmation card (direct Allow / Session / Deny / Cancel controls) + read-only repo-wide commit history & diff inspector (`Web` & `Mobile`)                                                     |
-| **Multi-Account & Quota Compliance**   | Pooled usage / standard flows                             | Isolated manual multi-account wizard, per-account quota breakdown & tier badges, Kimi Code POSIX-locked quota reader, Antigravity ToS-compliant CLI quota & `CgBI`/broken-session recovery                                          |
-| **Update & CI Distribution**           | `pingdotgg/t3code` Releases                               | Dedicated `nidao003/lunacode` GitHub Releases (`electron-updater`, CLI/Server update, Mobile checker) + automated multi-arch Docker Hub releases (`linux/amd64`, `linux/arm64`)                                                     |
+| Area                                   | Upstream T3 Code (`pingdotgg/t3code`)                     | LunaCode (`nidao003/lunacode`)                                                                                                                                                                                                                             |
+| -------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **App Identity & Data Coexistence**    | `T3 Code` bundle ID, `userData`, and single-instance lock | Independent `LunaCode` branding & Chang'e artwork (`com.nidao003.lunacode` / `com.nidao003.lunacode.mobile`), isolated `lunacode-v2` userData, dual-launch guard alongside official `T3 Code (Beta).app`, shared `~/.t3/userdata`                          |
+| **Telemetry & Crash Reporting**        | PostHog analytics, mobile Observe & Axiom OTLP enabled    | **Disabled by default** (`T3CODE_TELEMETRY_ENABLED=false`, Observe disabled, Axiom requires explicit opt-in token)                                                                                                                                         |
+| **Cloud Auth & Remote Tunnel Backend** | Clerk (`clerk.t3.codes`) + Cloudflare Workers/Zero Trust  | **Self-hosted all-in-one Docker backend** (`nidao008/lunacode-connect`) using Node 22 + `node:sqlite`, OAuth2 PKCE/Device Code, Relay v1, built-in binary WS `"t3_relay"` tunnel, `/admin` console, webhook queue & push dispatcher                        |
+| **Client Backend Configuration**       | Build-time hosted URL                                     | **Zero hardcoded private domains** in public builds; runtime server URL switcher UI across Desktop, Web, and Mobile                                                                                                                                        |
+| **Remote + LAN Routing**               | Relay or manual setup                                     | Public access via `t3_relay` HTTPS/WSS + automatic LAN return (`ROUTE_KIND_RANK.lan = 1`), `.local` mDNS discovery (`scutil --get LocalHostName`), custom LAN domain pairing UI                                                                            |
+| **Context & Cache Observability**      | Basic context meter                                       | Zero-token footer bar (context window, warning threshold, cache hit %, TTL countdown, `tok/s`), detailed Context & Cache Inspector (`Web` & `Mobile`)                                                                                                      |
+| **Compaction & Handoff**               | Standard `/compact`                                       | Optional opt-in structured `/compact` template + deterministic zero-LLM thread handoff draft                                                                                                                                                               |
+| **Approvals & Git History**            | Inline approval log / diff view                           | Prominent single composer approval confirmation card (direct Allow / Session / Deny / Cancel controls) + read-only repo-wide commit history & diff inspector (`Web` & `Mobile`)                                                                            |
+| **Visual Workflow Studio**             | Programmatic `.ts` / `.js` workflow definitions           | Declarative `*.flow.json` DAG canvas on Desktop/Web + vertical stages on Mobile (`LUNA-020`), 8 starter templates (6 auto-seeded `manual` cases), zero-token `precheck`, bounded loop human circuit breaker, `workflows.start` RPC & `t3_flow_*` MCP tools |
+| **Multi-Account & Quota Compliance**   | Pooled usage / standard flows                             | Isolated manual multi-account wizard, per-account quota breakdown & tier badges, Kimi Code POSIX-locked quota reader, Antigravity ToS-compliant CLI quota & `CgBI`/broken-session recovery                                                                 |
+| **Update & CI Distribution**           | `pingdotgg/t3code` Releases                               | Dedicated `nidao003/lunacode` GitHub Releases (`electron-updater`, CLI/Server update, Mobile checker) + automated multi-arch Docker Hub releases (`linux/amd64`, `linux/arm64`)                                                                            |
 
 ### Detailed Feature Breakdown
 
-All customizations are indexed in [`AGENTS.fork.md`](./AGENTS.fork.md#5-二开定制清单customizations-ledger) (`LUNA-001`–`LUNA-019`) and detailed in the [LunaCode Guide](./docs/lunacode.md):
+All customizations are indexed in [`AGENTS.fork.md`](./AGENTS.fork.md#5-二开定制清单customizations-ledger) (`LUNA-001`–`LUNA-020`) and detailed in the [LunaCode Guide](./docs/lunacode.md):
 
 1. **Independent Identity, Chang'e Artwork & Safe Coexistence (`LUNA-001`, `LUNA-002`)**
    - Ships with independent macOS/Windows/Linux bundle ID (`com.nidao003.lunacode`) and mobile bundle ID (`com.nidao003.lunacode.mobile`), moon-themed icons (`assets/lunacode/`), and isolated `lunacode-v2` Electron state.
@@ -69,6 +70,9 @@ All customizations are indexed in [`AGENTS.fork.md`](./AGENTS.fork.md#5-二开�
    - Broadcasts `.local` mDNS endpoints automatically when network access is enabled and supports switching pairing QR/links between LAN IP, `.local`, and custom domains without restarting.
    - Optional `rtk` status/hook helper in Settings (`LUNA-007`).
    - Routes Desktop `electron-updater`, CLI/Server self-updates, install scripts, and Mobile version checks to `nidao003/lunacode`.
+8. **Human-in-the-Loop Visual Workflow Studio (`LUNA-020`)**
+   - Declarative `*.flow.json` (`FlowSpec` v1) DAG orchestration with parallel fan-out/fan-in, bounded `isLoop` + `maxHops` human approval gates, zero-token `precheck` scripts, `<untrusted_event_data>` isolation, and same-project concurrent `root` write guards alongside upstream `.ts`/`.js` workflows.
+   - Ships 8 curated templates (with 6 `manual` templates auto-seeded once per installation via `.lunacode-flow-presets.json`), `workflows.start` RPC, `t3_flow_*` MCP tools, interactive Web/Desktop DAG canvas + live run tracker, and a synced Mobile vertical stage studio.
 
 ---
 
@@ -116,18 +120,18 @@ bash services/lunacode-connect/scripts/build-image.sh --load
 # B. Export an offline linux/amd64 .tar.gz archive for manual server upload
 bash services/lunacode-connect/scripts/build-image.sh \
   --platform linux/amd64 \
-  --tag lunacode-connect:0.1.12 \
-  --export-tar ./lunacode-connect-0.1.12-linux-amd64.tar.gz
+  --tag lunacode-connect:0.1.13 \
+  --export-tar ./lunacode-connect-0.1.13-linux-amd64.tar.gz
 
 # Import and start on the target server:
-bash services/lunacode-connect/scripts/deploy.sh --tar ./lunacode-connect-0.1.12-linux-amd64.tar.gz
+bash services/lunacode-connect/scripts/deploy.sh --tar ./lunacode-connect-0.1.13-linux-amd64.tar.gz
 
 # C. Build & push a multi-arch image (amd64 + arm64) to your own Docker Hub repo
 docker login -u <your-dockerhub-username>
 bash services/lunacode-connect/scripts/build-image.sh \
   --platform linux/amd64,linux/arm64 \
   --tag <your-dockerhub-username>/lunacode-connect:latest \
-  --tag <your-dockerhub-username>/lunacode-connect:0.1.12 \
+  --tag <your-dockerhub-username>/lunacode-connect:0.1.13 \
   --push
 ```
 

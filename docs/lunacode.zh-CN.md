@@ -6,7 +6,7 @@
 
 > **上游来源：** **LunaCode**（[`nidao003/lunacode`](https://github.com/nidao003/lunacode)）基于 T3 Tools Inc. 开源项目 [**T3 Code (`pingdotgg/t3code`)**](https://github.com/pingdotgg/t3code)（MIT 协议）进行二开增强。
 
-LunaCode 完整保留了上游 T3 Code 的多模型 Orchestrator 调度核心、远程控制架构与 `~/.t3/userdata` 数据库兼容性，并重点增加了**默认零遥测隐私保护**、**全自建 Docker 一体化后端与 `"t3_relay"` 隧道（`nidao008/lunacode-connect`）**、**全端运行时后台地址配置卡片**、**官方合规多账号配额拆解**、**跨端上下文/缓存状态条与透视面板**、**显性授权确认卡与全仓库只读 Git 历史**、**局域网 `.local` mDNS 配对**及 **Antigravity 坏图与会话自动恢复**能力。
+LunaCode 完整保留了上游 T3 Code 的多模型 Orchestrator 调度核心、远程控制架构与 `~/.t3/userdata` 数据库兼容性，并重点增加了**默认零遥测隐私保护**、**全自建 Docker 一体化后端与 `"t3_relay"` 隧道（`nidao008/lunacode-connect`）**、**全端运行时后台地址配置卡片**、**官方合规多账号配额拆解**、**跨端上下文/缓存状态条与透视面板**、**显性授权确认卡与全仓库只读 Git 历史**、**局域网 `.local` mDNS 配对**、**Antigravity 坏图与会话自动恢复**以及**声明式 `*.flow.json` 可视化工作流工作室**能力。
 
 ---
 
@@ -65,6 +65,10 @@ LunaCode 完整保留了上游 T3 Code 的多模型 Orchestrator 调度核心、
   - 开启网络访问时自动探测本机 `.local` 主机名，支持在 Settings → Sharing & access 一键切换 IP / `.local` / 自定义局域网域名生成配对二维码。
 - **`rtk` 终端输出降噪助手（`LUNA-007`）：**
   - 仅作本地检测与命令引导，不主动修改或丢失关键报错上下文。
+- **Human-in-the-Loop 可视化工作流工作室（`*.flow.json`，`LUNA-020`）：**
+  - 在完整兼容上游编程式 `.ts` / `.js` 工作流的基础上，新增声明式 `*.flow.json`（`FlowSpec` v1）执行引擎，支持 DAG 并行扇出/扇入、有界 `isLoop` + `maxHops` 人工审批熔断、零 Token `precheck` 门槛、`<untrusted_event_data>` 隔离及同项目并发 `root` 写冲突校验。
+  - 内置 8 套精选工作流模板（首次启动通过 `.lunacode-flow-presets.json` 单次自动预置 `bug-repro-fix`、`pr-dual-review`、`ci-doctor-autofix`、`docs-drift-sync`、`release-notes-prep`、`daily-repo-standup` 共 6 套 `manual` 案例，另提供 `issue-triage` 与 `feature-plan-ship` 按需导入）。
+  - 提供 `workflows.start` RPC 与对话内 `t3_flow_*` MCP 工具（支持多版本流迭代），并在 Web / Desktop 提供交互式 DAG 画布编排与实时运行流视图，在 Mobile 同步提供竖向阶段 DAG 编排与一键案例导入。
 
 ---
 

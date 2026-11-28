@@ -6,7 +6,7 @@
 
 > **Upstream attribution:** **LunaCode** ([`nidao003/lunacode`](https://github.com/nidao003/lunacode)) is an open-source fork of [**T3 Code (`pingdotgg/t3code`)**](https://github.com/pingdotgg/t3code) by T3 Tools Inc. (MIT License).
 
-LunaCode preserves upstream T3 Code's multi-provider orchestration engine, remote architecture, and `~/.t3/userdata` database schema while adding privacy-by-default telemetry settings, a zero-dependency self-hosted Docker backend + `"t3_relay"` tunnel (`nidao008/lunacode-connect`), runtime backend server URL configuration, official-ToS-compliant quota/account tooling, cross-surface context & cache observability, explicit approval confirmation cards, read-only repo git history, LAN `.local` mDNS pairing, and Antigravity media/session hardening.
+LunaCode preserves upstream T3 Code's multi-provider orchestration engine, remote architecture, and `~/.t3/userdata` database schema while adding privacy-by-default telemetry settings, a zero-dependency self-hosted Docker backend + `"t3_relay"` tunnel (`nidao008/lunacode-connect`), runtime backend server URL configuration, official-ToS-compliant quota/account tooling, cross-surface context & cache observability, explicit approval confirmation cards, read-only repo git history, LAN `.local` mDNS pairing, Antigravity media/session hardening, and a declarative `*.flow.json` visual DAG workflow studio across Web/Desktop and Mobile.
 
 ---
 
@@ -80,6 +80,12 @@ Core algorithms live in `packages/client-runtime/src/lunacode/` and render nativ
 ### Terminal Output Noise Reduction (`rtk`) (`LUNA-007`)
 
 - Opt-in helper in Desktop Settings that checks for local [`rtk`](https://github.com/rtk-ai/rtk) and native Claude Code hooks without mutating tool output silently.
+
+### Visual Workflow Studio (`*.flow.json`) (`LUNA-020`)
+
+- **Coexists with upstream `.ts` / `.js` workflows:** Adds declarative `*.flow.json` (`FlowSpec` v1) execution alongside upstream programmatic workflows, supporting parallel fan-out/fan-in DAG stages, bounded `isLoop` + `maxHops` human approval circuit breakers, zero-token `precheck` gate scripts, `<untrusted_event_data>` isolation, and same-project concurrent `root` write conflict validation.
+- **8 curated templates (6 auto-seeded on first run):** Auto-seeds 6 `manual` templates once per installation via `.lunacode-flow-presets.json` (`bug-repro-fix`, `pr-dual-review`, `ci-doctor-autofix`, `docs-drift-sync`, `release-notes-prep`, `daily-repo-standup`), plus on-demand `issue-triage` and `feature-plan-ship`.
+- **Cross-surface orchestration & MCP:** Exposes the `workflows.start` RPC and in-thread `t3_flow_*` MCP tools (supporting versioned `vN+1` flows), paired with an interactive Web/Desktop DAG canvas + live run viewer and a Mobile vertical stage studio.
 
 ---
 

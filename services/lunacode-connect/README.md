@@ -24,7 +24,7 @@ Official multi-arch images (`linux/amd64` and `linux/arm64`) are published to Do
 ```bash
 docker pull nidao008/lunacode-connect:latest
 # Or pin a release tag:
-docker pull nidao008/lunacode-connect:0.1.12
+docker pull nidao008/lunacode-connect:0.1.13
 ```
 
 ### Quick Start with Docker Compose / `deploy.sh`
@@ -84,17 +84,17 @@ bash services/lunacode-connect/scripts/build-image.sh --load
 ```bash
 bash services/lunacode-connect/scripts/build-image.sh \
   --platform linux/amd64 \
-  --tag lunacode-connect:0.1.12 \
-  --export-tar ./lunacode-connect-0.1.12-linux-amd64.tar.gz
+  --tag lunacode-connect:0.1.13 \
+  --export-tar ./lunacode-connect-0.1.13-linux-amd64.tar.gz
 ```
 
 On the target server:
 
 ```bash
-bash services/lunacode-connect/scripts/deploy.sh --tar ./lunacode-connect-0.1.12-linux-amd64.tar.gz
+bash services/lunacode-connect/scripts/deploy.sh --tar ./lunacode-connect-0.1.13-linux-amd64.tar.gz
 ```
 
-(Or `docker load -i lunacode-connect-0.1.12-linux-amd64.tar.gz`, set `LUNACODE_CONNECT_IMAGE=lunacode-connect:0.1.12` in `.env`, then `docker compose up -d`.)
+(Or `docker load -i lunacode-connect-0.1.13-linux-amd64.tar.gz`, set `LUNACODE_CONNECT_IMAGE=lunacode-connect:0.1.13` in `.env`, then `docker compose up -d`.)
 
 ### Build & Push Multi-Arch Image to Your Docker Hub
 
@@ -103,7 +103,7 @@ docker login -u <your-dockerhub-username>
 bash services/lunacode-connect/scripts/build-image.sh \
   --platform linux/amd64,linux/arm64 \
   --tag <your-dockerhub-username>/lunacode-connect:latest \
-  --tag <your-dockerhub-username>/lunacode-connect:0.1.12 \
+  --tag <your-dockerhub-username>/lunacode-connect:0.1.13 \
   --push
 ```
 

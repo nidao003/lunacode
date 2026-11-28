@@ -39,10 +39,11 @@ LunaCode 统一调度本机已安装的 Coding Agent，提供 **Desktop（桌面
 | **上下文与缓存透视**     | 基础上下文指示                                      | 全端零额外 Token 消耗状态栏（上下文容量、提醒阈值、缓存命中率、TTL 倒计时、`tok/s` 输出速度）+ 交互式上下文/缓存透视弹窗                                                                                                                         |
 | **会话压缩与接力**       | 原生 `/compact`                                     | 可选结构化 `/compact` 模板（默认关闭）+ 确定性零 LLM 调用「摘要接力开新会话」                                                                                                                                                                    |
 | **授权审批与 Git 历史**  | 审批混入工作日志或易双卡重复                        | 输入框顶部醒目单卡授权确认（直接展开允许/本会话允许/拒绝/取消与中文化操作按钮）+ Web/Mobile 全仓库只读 Git 提交历史分页与提交详情查看                                                                                                            |
+| **可视化工作流编排**     | 编程式 `.ts` / `.js` 工作流定义                     | 声明式 `*.flow.json` DAG 画布（桌面/Web）与竖向阶段编排（Mobile，`LUNA-020`），内置 8 套精选模板（6 套首次自动预置 `manual` 案例）、零 Token `precheck`、有界循环人工熔断、`workflows.start` RPC 与 `t3_flow_*` MCP 工具                         |
 | **多账号与订阅合规**     | 配额聚合展示                                        | 严格遵守官方 ToS（零流量劫持/零私钥抓取/零自动轮询号池），提供手动隔离多账号向导、分账号配额拆解与订阅档位徽章、Kimi Code 合规配额读取、Antigravity 手动刷新与 `CgBI`/媒体坏图防毒与自动会话重建                                                 |
 | **更新渠道与多平台发布** | `pingdotgg/t3code` Releases                         | 切换至 `nidao003/lunacode` GitHub Releases，并由 GitHub Actions 自动产出全端安装包及 `linux/amd64` / `linux/arm64` 多架构 Docker Hub 镜像                                                                                                        |
 
-### 已实现二开能力详述（`LUNA-001`–`LUNA-019`）
+### 已实现二开能力详述（`LUNA-001`–`LUNA-020`）
 
 完整清单与冲突策略见 [`AGENTS.fork.md`](./AGENTS.fork.md#5-二开定制清单customizations-ledger) 及 [LunaCode 完整指南](./docs/lunacode.zh-CN.md)：
 
@@ -62,6 +63,9 @@ LunaCode 统一调度本机已安装的 Coding Agent，提供 **Desktop（桌面
    - 仅支持用户手动建立独立配置目录与手动切换，绝不提取或轮询私钥；内置 Kimi Code 配额读取（POSIX 文件锁 + Windows 只读保护）、Antigravity 手动触发配额检测、离线缓存、iOS `CgBI` 图片拦截与异常会话无感重建。
 7. **局域网 `.local` 自动发现、`rtk` 助手与独立更新链路（`LUNA-007`, `LUNA-010`, `LUNA-019`）**
    - 开启网络访问时自动广播 macOS `.local` mDNS 域名并支持切换自定义局域网配对链接；支持检测并引导配置本机 `rtk`；全端更新指向 `nidao003/lunacode`。
+8. **Human-in-the-Loop 可视化工作流工作室（`LUNA-020`）**
+   - 在完整兼容上游 `.ts`/`.js` 编程式工作流的同时，新增声明式 `*.flow.json`（`FlowSpec` v1）DAG 编排引擎，支持并行扇出/扇入、有界 `isLoop` + `maxHops` 人工审批熔断、零 Token `precheck` 门槛、`<untrusted_event_data>` 隔离与同项目并发 `root` 写冲突校验。
+   - 内置 8 套精选工作流模板（首次启动按 `.lunacode-flow-presets.json` 自动预置 6 套 `manual` 案例），并提供 `workflows.start` RPC、`t3_flow_*` MCP 工具、Web/Desktop 交互式 DAG 画布与实时运行态流程图，以及 Mobile 竖向阶段工作流与一键导入。
 
 ---
 
@@ -109,18 +113,18 @@ bash services/lunacode-connect/scripts/build-image.sh --load
 # B. 打包并导出 linux/amd64 离线镜像包，方便上传到无公网/国内加速不便的服务器
 bash services/lunacode-connect/scripts/build-image.sh \
   --platform linux/amd64 \
-  --tag lunacode-connect:0.1.12 \
-  --export-tar ./lunacode-connect-0.1.12-linux-amd64.tar.gz
+  --tag lunacode-connect:0.1.13 \
+  --export-tar ./lunacode-connect-0.1.13-linux-amd64.tar.gz
 
 # 在目标服务器导入并启动：
-bash services/lunacode-connect/scripts/deploy.sh --tar ./lunacode-connect-0.1.12-linux-amd64.tar.gz
+bash services/lunacode-connect/scripts/deploy.sh --tar ./lunacode-connect-0.1.13-linux-amd64.tar.gz
 
 # C. 本地跨架构编译（amd64 + arm64）并推送到你自己的 Docker Hub
 docker login -u <你的DockerHub用户名>
 bash services/lunacode-connect/scripts/build-image.sh \
   --platform linux/amd64,linux/arm64 \
   --tag <你的DockerHub用户名>/lunacode-connect:latest \
-  --tag <你的DockerHub用户名>/lunacode-connect:0.1.12 \
+  --tag <你的DockerHub用户名>/lunacode-connect:0.1.13 \
   --push
 ```
 

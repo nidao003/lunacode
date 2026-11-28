@@ -24,7 +24,7 @@
 ```bash
 docker pull nidao008/lunacode-connect:latest
 # 或指定具体版本：
-docker pull nidao008/lunacode-connect:0.1.12
+docker pull nidao008/lunacode-connect:0.1.13
 ```
 
 ### 快速启动步骤
@@ -84,17 +84,17 @@ bash services/lunacode-connect/scripts/build-image.sh --load
 ```bash
 bash services/lunacode-connect/scripts/build-image.sh \
   --platform linux/amd64 \
-  --tag lunacode-connect:0.1.12 \
-  --export-tar ./lunacode-connect-0.1.12-linux-amd64.tar.gz
+  --tag lunacode-connect:0.1.13 \
+  --export-tar ./lunacode-connect-0.1.13-linux-amd64.tar.gz
 ```
 
 将 `.tar.gz` 与 `services/lunacode-connect/` 上传到服务器后导入启动：
 
 ```bash
-bash services/lunacode-connect/scripts/deploy.sh --tar ./lunacode-connect-0.1.12-linux-amd64.tar.gz
+bash services/lunacode-connect/scripts/deploy.sh --tar ./lunacode-connect-0.1.13-linux-amd64.tar.gz
 ```
 
-（或者先 `docker load -i lunacode-connect-0.1.12-linux-amd64.tar.gz`，在 `.env` 配置 `LUNACODE_CONNECT_IMAGE=lunacode-connect:0.1.12` 后 `docker compose up -d`。）
+（或者先 `docker load -i lunacode-connect-0.1.13-linux-amd64.tar.gz`，在 `.env` 配置 `LUNACODE_CONNECT_IMAGE=lunacode-connect:0.1.13` 后 `docker compose up -d`。）
 
 ### C. 本地跨架构编译并推送到你自己的 Docker Hub
 
@@ -106,7 +106,7 @@ docker login -u <你的DockerHub用户名>
 bash services/lunacode-connect/scripts/build-image.sh \
   --platform linux/amd64,linux/arm64 \
   --tag <你的DockerHub用户名>/lunacode-connect:latest \
-  --tag <你的DockerHub用户名>/lunacode-connect:0.1.12 \
+  --tag <你的DockerHub用户名>/lunacode-connect:0.1.13 \
   --push
 ```
 
