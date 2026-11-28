@@ -137,6 +137,7 @@ import * as DocumentText from "./provider/DocumentText.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as Workflows from "./workflows/Workflows.ts";
 import * as WorkflowRuntime from "./workflows/WorkflowRuntime.ts";
+import * as BotClusterService from "./lunacode/bots/BotClusterService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as FeedbackStore from "./feedback/FeedbackStore.ts";
 import * as GuestShareService from "./guest/GuestShareService.ts";
@@ -1512,6 +1513,7 @@ export const layerWsRpc = (
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const workflows = yield* Workflows.Workflows;
       const workflowDefinitions = yield* WorkflowRuntime.WorkflowDefinitions;
+      const botCluster = yield* BotClusterService.BotClusterService;
       // The service's messages are built from its own attributes, so they are safe to send.
       const toWorkflowRequestError = (error: Workflows.WorkflowError) =>
         new WorkflowRequestError({ message: error.message });
@@ -2436,12 +2438,30 @@ export const layerWsRpc = (
           ),
         [WS_METHODS.workflowsResume]: (input) =>
           workflows.resume(input.runId).pipe(Effect.mapError(toWorkflowRequestError)),
+        [WS_METHODS.workflowsStart]: (input) =>
+          Effect.flatMap(random.uuidV4(), (id) =>
+            workflows.start(input.workflow, input.input ?? { __manual: true }, {
+              idempotencyKey: input.idempotencyKey ?? `manual:${id}`,
+              ...(input.version === undefined ? {} : { version: input.version }),
+            }),
+          ).pipe(Effect.mapError(toWorkflowRequestError)),
         [WS_METHODS.workflowsCancel]: (input) =>
           workflows.cancel(input.runId, input.reason).pipe(Effect.mapError(toWorkflowRequestError)),
         [WS_METHODS.workflowsGetDefinition]: (_input) => workflowDefinitions.read,
         [WS_METHODS.workflowsSaveDefinition]: (input) =>
           workflowDefinitions.save(input.name, input.source),
         [WS_METHODS.workflowsDeleteDefinition]: (input) => workflowDefinitions.remove(input.name),
+        [WS_METHODS.botsSubscribe]: (_input) => botCluster.subscribe(),
+        [WS_METHODS.botsUpsert]: (input) => botCluster.upsertBot(input),
+        [WS_METHODS.botsDelete]: (input) => botCluster.deleteBot(input),
+        [WS_METHODS.botsEnsureHomeThread]: (input) => botCluster.ensureHomeThread(input),
+        [WS_METHODS.botsDispatchWorker]: (input) => botCluster.dispatchWorker(input),
+        [WS_METHODS.botsSendMessage]: (input) => botCluster.sendMessage(input),
+        [WS_METHODS.botsSeedPresets]: (input) => botCluster.seedPresets(input),
+        [WS_METHODS.botsTaskUpsert]: (input) => botCluster.upsertTask(input),
+        [WS_METHODS.botsTaskComment]: (input) => botCluster.addTaskComment(input),
+        [WS_METHODS.botsTaskAnswer]: (input) => botCluster.answerTaskQuestion(input),
+        [WS_METHODS.botsTaskDelete]: (input) => botCluster.deleteTask(input),
         [WS_METHODS.scheduledTasksSubscribe]: (_input) =>
           scheduledTasks.subscribeList().pipe(Stream.map(withVisibleWebhookUrls)),
         [WS_METHODS.scheduledTasksUpsert]: (input) => scheduledTasks.upsert(input),

@@ -34,6 +34,7 @@ import { PeerLinks } from "../peer/PeerLinks.ts";
 import { RemoteDelegation } from "../peer/RemoteDelegation.ts";
 import { PreviewManager } from "../preview/Manager.ts";
 import { Workflows } from "../workflows/Workflows.ts";
+import * as WorkflowRuntime from "../workflows/WorkflowRuntime.ts";
 import { PreviewBrowser } from "../preview/PreviewBrowser.ts";
 import { ManagedProjectFolders } from "../project/ManagedProjectFolders.ts";
 import { ProjectCloneTracker } from "../project/ProjectCloneTracker.ts";
@@ -42,6 +43,7 @@ import { ProjectSetupScriptRunner } from "../project/ProjectSetupScriptRunner.ts
 import { IssueService } from "../issue/IssueService.ts";
 import { PullRequestReviewGuideService } from "../pullRequest/PullRequestReviewGuideService.ts";
 import { PullRequestService } from "../pullRequest/PullRequestService.ts";
+import * as BotClusterService from "../lunacode/bots/BotClusterService.ts";
 import { ScheduledTaskService } from "../scheduledTasks/ScheduledTaskService.ts";
 import { SecretRequests } from "../secrets/SecretRequests.ts";
 import { FeedbackStore } from "../feedback/FeedbackStore.ts";
@@ -77,6 +79,8 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(PreviewBrowser)({}),
   Layer.mock(PreviewManager)({}),
   Layer.mock(Workflows)({}),
+  Layer.mock(WorkflowRuntime.WorkflowDefinitions)({}),
+  Layer.mock(BotClusterService.BotClusterService)({}),
   Layer.mock(ProjectCloneTracker)({}),
   Layer.mock(ProjectService)({}),
   Layer.mock(ProjectSetupScriptRunner)({}),

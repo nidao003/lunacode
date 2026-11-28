@@ -53,6 +53,7 @@ import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { LunaWorkflowRunEnhancements } from "../../lunacode/workflows/LunaWorkflowRunEnhancements";
 import {
   buildWorkflowFeed,
   buildWorkflowTimeline,
@@ -537,101 +538,108 @@ export function WorkflowRunFeed({
           )}
         </header>
 
-        {detail.error ||
-        feed === null ||
-        (feed.length === 0 && run.status === "paused" && loose.length === 0) ? (
-          <>
-            {detail.error ? (
-              <p className="mt-4 text-xs text-destructive">{detail.error}</p>
-            ) : feed === null ? (
-              <p className="mt-4 text-xs text-muted-foreground" role="status">
-                <T>Loading steps…</T>
-              </p>
-            ) : null}
-            {/* A question the run already asks is answerable without its step history. */}
-            {run.status === "paused" ? (
-              <div className="mt-4 border-t border-border pt-4">
-                <div className="max-w-2xl">{pause(null, run.pauses, run.detail)}</div>
-              </div>
-            ) : null}
-            {node.questions.map((question) => (
-              <div key={question.name} className="mt-4">
-                <WorkflowQuestionCard
-                  environmentId={environmentId}
-                  question={question}
-                  onOpenThread={onOpenThread}
-                />
-              </div>
-            ))}
-          </>
-        ) : (
-          <div className="mt-4 flex flex-col gap-4 @2xl/feed:flex-row @2xl/feed:items-start">
-            <WorkflowTimeline
-              environmentId={environmentId}
-              rows={feed}
-              node={node}
-              nowMs={nowMs}
-              // Only a step someone picked is marked; what the panel follows on its own is not.
-              focus={picked !== null && keys.has(picked) ? picked : null}
-              current={shown}
-              onPick={pick}
-              loose={loose}
-              paused={pausedApart}
-              end={ended ? endWord : null}
-              question={questionOf}
-              onOpenThread={onOpenThread}
-              openedAtMs={openedAtMs}
-            />
-            <section
-              ref={panel}
-              aria-label={gt("What happened")}
-              className="min-w-0 flex-1 border-t border-border pt-4 @2xl/feed:sticky @2xl/feed:top-4 @2xl/feed:self-stretch @2xl/feed:border-t-0 @2xl/feed:border-s @2xl/feed:ps-6 @2xl/feed:pt-1"
-            >
-              {shownBeat !== undefined ? (
-                // Keyed by the step: a reason typed for one question must not follow to the next.
-                <div key={shownBeat.name} data-step={shownBeat.name}>
-                  {beatCard(shownBeat)}
-                  {(() => {
-                    // With one reference, the header already says it.
-                    const touched =
-                      references.length > 1
-                        ? workflowStepReferences(references, shownBeat.name)
-                        : [];
-                    return touched.length === 0 ? null : (
-                      <div className="mt-4 flex flex-wrap gap-1.5">
-                        {touched.map((reference) => chip(reference, true))}
-                      </div>
-                    );
-                  })()}
-                </div>
-              ) : shownQuick !== undefined && shownQuick.kind === "quick" ? (
-                <WorkflowQuickStepsCard row={shownQuick} />
-              ) : asking ? null : focus === "pause" ? (
-                pause(null, run.pauses, run.detail)
-              ) : focus === "end" ? (
-                <FeedCard tone={run.status === "completed" ? "done" : "plain"}>
-                  <CardHead
-                    mark={
-                      run.status === "completed" ? (
-                        <CheckIcon className="size-3.5 text-success-foreground" />
-                      ) : null
-                    }
-                    name={endWord}
-                    sub={<RelativeLabel value={run.endedAt ?? run.updatedAt} />}
-                  />
-                  {run.status !== "completed" && run.detail ? (
-                    <p className="mt-3 text-sm break-words whitespace-pre-wrap">{run.detail}</p>
-                  ) : null}
-                  <ResultLines lines={resultLines} />
-                </FeedCard>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  <T>Nothing yet.</T>
+        <LunaWorkflowRunEnhancements
+          environmentId={environmentId}
+          node={node}
+          steps={steps}
+          onOpenThread={onOpenThread}
+        >
+          {detail.error ||
+          feed === null ||
+          (feed.length === 0 && run.status === "paused" && loose.length === 0) ? (
+            <>
+              {detail.error ? (
+                <p className="mt-4 text-xs text-destructive">{detail.error}</p>
+              ) : feed === null ? (
+                <p className="mt-4 text-xs text-muted-foreground" role="status">
+                  <T>Loading steps…</T>
                 </p>
-              )}
-            </section>
-          </div>
-        )}
+              ) : null}
+              {/* A question the run already asks is answerable without its step history. */}
+              {run.status === "paused" ? (
+                <div className="mt-4 border-t border-border pt-4">
+                  <div className="max-w-2xl">{pause(null, run.pauses, run.detail)}</div>
+                </div>
+              ) : null}
+              {node.questions.map((question) => (
+                <div key={question.name} className="mt-4">
+                  <WorkflowQuestionCard
+                    environmentId={environmentId}
+                    question={question}
+                    onOpenThread={onOpenThread}
+                  />
+                </div>
+              ))}
+            </>
+          ) : (
+            <div className="mt-4 flex flex-col gap-4 @2xl/feed:flex-row @2xl/feed:items-start">
+              <WorkflowTimeline
+                environmentId={environmentId}
+                rows={feed}
+                node={node}
+                nowMs={nowMs}
+                // Only a step someone picked is marked; what the panel follows on its own is not.
+                focus={picked !== null && keys.has(picked) ? picked : null}
+                current={shown}
+                onPick={pick}
+                loose={loose}
+                paused={pausedApart}
+                end={ended ? endWord : null}
+                question={questionOf}
+                onOpenThread={onOpenThread}
+                openedAtMs={openedAtMs}
+              />
+              <section
+                ref={panel}
+                aria-label={gt("What happened")}
+                className="min-w-0 flex-1 border-t border-border pt-4 @2xl/feed:sticky @2xl/feed:top-4 @2xl/feed:self-stretch @2xl/feed:border-t-0 @2xl/feed:border-s @2xl/feed:ps-6 @2xl/feed:pt-1"
+              >
+                {shownBeat !== undefined ? (
+                  // Keyed by the step: a reason typed for one question must not follow to the next.
+                  <div key={shownBeat.name} data-step={shownBeat.name}>
+                    {beatCard(shownBeat)}
+                    {(() => {
+                      // With one reference, the header already says it.
+                      const touched =
+                        references.length > 1
+                          ? workflowStepReferences(references, shownBeat.name)
+                          : [];
+                      return touched.length === 0 ? null : (
+                        <div className="mt-4 flex flex-wrap gap-1.5">
+                          {touched.map((reference) => chip(reference, true))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                ) : shownQuick !== undefined && shownQuick.kind === "quick" ? (
+                  <WorkflowQuickStepsCard row={shownQuick} />
+                ) : asking ? null : focus === "pause" ? (
+                  pause(null, run.pauses, run.detail)
+                ) : focus === "end" ? (
+                  <FeedCard tone={run.status === "completed" ? "done" : "plain"}>
+                    <CardHead
+                      mark={
+                        run.status === "completed" ? (
+                          <CheckIcon className="size-3.5 text-success-foreground" />
+                        ) : null
+                      }
+                      name={endWord}
+                      sub={<RelativeLabel value={run.endedAt ?? run.updatedAt} />}
+                    />
+                    {run.status !== "completed" && run.detail ? (
+                      <p className="mt-3 text-sm break-words whitespace-pre-wrap">{run.detail}</p>
+                    ) : null}
+                    <ResultLines lines={resultLines} />
+                  </FeedCard>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    <T>Nothing yet.</T>
+                  </p>
+                )}
+              </section>
+            </div>
+          )}
+        </LunaWorkflowRunEnhancements>
       </article>
     </AnswerDrafts.Provider>
   );

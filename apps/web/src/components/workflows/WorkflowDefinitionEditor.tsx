@@ -25,8 +25,11 @@ import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 import { useEditableAfterHighlight } from "../files/useEditableAfterHighlight";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { isFlowDefinitionFile } from "@t3tools/client-runtime/lunacode/workflow-flow";
 import { type DiskChange, diskChange, staleAfterSave } from "./WorkflowDefinitionEditor.logic";
 import { WorkflowsEmpty } from "./WorkflowRunsView";
+import { LunaFlowStudio } from "../../lunacode/workflows/LunaFlowStudio";
+import { LunaFlowFileBadge, LunaNewFlowButton } from "../../lunacode/workflows/LunaNewFlowButton";
 
 type DefinitionEditor = Editor<"file", undefined, undefined>;
 const createEditor: EditorFactory<undefined, undefined> = (editorType, options, editStateKey) =>
@@ -465,6 +468,26 @@ export default function WorkflowDefinitionEditor({
 
   if (file !== null) {
     const shown = files.find((candidate) => candidate.name === file) ?? null;
+    if (isFlowDefinitionFile(file)) {
+      return (
+        <div className="flex min-h-0 flex-1 flex-col">
+          {between}
+          <LunaFlowStudio
+            key={file}
+            environmentId={environmentId}
+            name={file}
+            source={shown?.source ?? ""}
+            revision={revision}
+            onDisk={shown?.problems ?? []}
+            offline={away !== null}
+            onDelete={single || shown === null ? undefined : () => removeFile(file)}
+            onClose={() => onOpen(null)}
+            onOpenFile={open}
+            actions={actions}
+          />
+        </div>
+      );
+    }
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         {between}
@@ -504,10 +527,13 @@ export default function WorkflowDefinitionEditor({
               </T>
             </p>
             {single || !canChange ? null : naming === null ? (
-              <Button size="sm" variant="outline" onClick={() => setNaming("")}>
-                <PlusIcon />
-                <T>New file</T>
-              </Button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <LunaNewFlowButton environmentId={environmentId} onCreated={open} />
+                <Button size="sm" variant="outline" onClick={() => setNaming("")}>
+                  <PlusIcon />
+                  <T>New file</T>
+                </Button>
+              </div>
             ) : (
               <form
                 className="flex shrink-0 items-center gap-1"
@@ -551,7 +577,10 @@ export default function WorkflowDefinitionEditor({
                   >
                     <FileCode2Icon className="size-4 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-mono text-sm">{candidate.name}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="truncate font-mono text-sm">{candidate.name}</span>
+                        <LunaFlowFileBadge fileName={candidate.name} />
+                      </span>
                       <span className="block truncate text-xs text-muted-foreground">
                         {candidate.workflows.length === 0
                           ? gt("Defines no workflows")

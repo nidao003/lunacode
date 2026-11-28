@@ -2,7 +2,7 @@ import { uuidv4 } from "../../lib/uuid";
 import { ThreadUndoNotice } from "./ThreadUndoNotice";
 import { use } from "react";
 import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
-import { useNavigation } from "@react-navigation/native";
+import { StackActions, useNavigation } from "@react-navigation/native";
 import { useMemo, useState } from "react";
 import { Platform } from "react-native";
 import { useGT, useMessages } from "gt-react-native";
@@ -207,6 +207,11 @@ export function HomeRouteScreen() {
           onEnvironmentChange={setSelectedEnvironmentId}
           onProjectChange={setSelectedProjectKey}
           onOpenSettings={() => selectTab("settings")}
+          onOpenBots={(environmentId) =>
+            navigation.dispatch(
+              StackActions.push("LunaBots", { environmentId: String(environmentId) }),
+            )
+          }
           onSearchQueryChange={setSearchQuery}
           onSelectThread={handleSelectThread}
           onSelectPendingTask={openPendingTask}

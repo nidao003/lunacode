@@ -13,6 +13,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "..
 import { ScrollArea } from "../ui/scroll-area";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { LunaQuickRunBar } from "../../lunacode/workflows/LunaWorkflowRunEnhancements";
 import {
   RelativeLabel,
   WorkflowChip,
@@ -280,6 +281,12 @@ export function WorkflowRunsView({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {problemAlert}
+      <LunaQuickRunBar
+        environmentId={environmentId}
+        workflows={snapshot.workflows}
+        onStarted={(runId) => onSelect(runId)}
+        onOpenDefinitions={onOpenDefinitions}
+      />
       <div className="flex min-h-0 min-w-0 flex-1">
         {/* Below md there is room for one of the two: the list, or the run picked from it. */}
         <div

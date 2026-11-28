@@ -41,6 +41,7 @@ import {
 } from "./WorkflowStepCard";
 import { WORKFLOW_TONE_CLASS, WorkflowChip } from "./WorkflowsScreen";
 import { WorkflowTimeline } from "./WorkflowTimeline";
+import { LunaMobileRunViewSwitch } from "../../lunacode/workflows/LunaMobileWorkflowWrappers";
 
 export type WorkflowRunParams = {
   readonly environmentId: string;
@@ -322,50 +323,58 @@ function RunBody(props: { readonly environmentId: EnvironmentId; readonly node: 
           </Text>
         </View>
       </View>
-      {feed === null ? (
-        <>
-          <Text className="px-1 text-sm text-foreground-muted">
-            {detail.error ?? gt("Loading the run's steps…")}
-          </Text>
-          {/* What waits on a person comes with the run, not its steps, so it stays answerable. */}
-          {run.status === "paused" ? pause : null}
-          {node.questions.map((asked) => question(asked))}
-        </>
-      ) : feed.length === 0 && run.status === "paused" && loose.length === 0 ? (
-        // Paused before any step: the pause is all there is to say.
-        pause
-      ) : (
-        <View className="gap-4">
-          <WorkflowTimeline
-            rows={feed}
-            node={node}
-            sessionId={sessionId}
-            question={questionOf}
-            loose={loose}
-            renderQuestion={(asked) => question(asked, true)}
-            pausedAt={pausedAt}
-            pause={pause}
-            onOpenStep={openStep}
-            openedAtMs={openedAtMs}
-          />
-          {ended && run.status === "completed" && resultSaysMore ? (
-            <View className="gap-2 border-t border-border pt-3">
-              <Facts
-                facts={resultLines.flatMap((line) =>
-                  line.label === null ? [] : [{ label: line.label, value: line.value }],
-                )}
-              />
-              {resultLines
-                .filter((line) => line.label === null)
-                .map((line) => (
-                  <Text key={line.value} className="text-sm text-foreground">
-                    {line.value}
-                  </Text>
-                ))}
-            </View>
-          ) : null}
-        </View>
-      )}
+      <LunaMobileRunViewSwitch
+        environmentId={environmentId}
+        node={node}
+        steps={steps}
+        canAnswer={canOperate}
+        onOpenThread={(target) => threadOpener(target)?.()}
+      >
+        {feed === null ? (
+          <>
+            <Text className="px-1 text-sm text-foreground-muted">
+              {detail.error ?? gt("Loading the run's steps…")}
+            </Text>
+            {/* What waits on a person comes with the run, not its steps, so it stays answerable. */}
+            {run.status === "paused" ? pause : null}
+            {node.questions.map((asked) => question(asked))}
+          </>
+        ) : feed.length === 0 && run.status === "paused" && loose.length === 0 ? (
+          // Paused before any step: the pause is all there is to say.
+          pause
+        ) : (
+          <View className="gap-4">
+            <WorkflowTimeline
+              rows={feed}
+              node={node}
+              sessionId={sessionId}
+              question={questionOf}
+              loose={loose}
+              renderQuestion={(asked) => question(asked, true)}
+              pausedAt={pausedAt}
+              pause={pause}
+              onOpenStep={openStep}
+              openedAtMs={openedAtMs}
+            />
+            {ended && run.status === "completed" && resultSaysMore ? (
+              <View className="gap-2 border-t border-border pt-3">
+                <Facts
+                  facts={resultLines.flatMap((line) =>
+                    line.label === null ? [] : [{ label: line.label, value: line.value }],
+                  )}
+                />
+                {resultLines
+                  .filter((line) => line.label === null)
+                  .map((line) => (
+                    <Text key={line.value} className="text-sm text-foreground">
+                      {line.value}
+                    </Text>
+                  ))}
+              </View>
+            ) : null}
+          </View>
+        )}
+      </LunaMobileRunViewSwitch>
       {!ended && canOperate ? (
         <Button
           tone="text"

@@ -143,6 +143,8 @@ import { UsageLimitAccountScreen } from "./features/usage/UsageLimitsPooled";
 import { UsageRouteScreen } from "./features/usage/UsageRouteScreen";
 import { WorkflowRunRouteScreen } from "./features/workflows/WorkflowRunRouteScreen";
 import { WorkflowStepSheet } from "./features/workflows/WorkflowStepSheet";
+import { LunaMobileFlowStudioScreen } from "./lunacode/workflows/LunaMobileFlowStudioScreen";
+import { LunaMobileBotsScreen } from "./lunacode/bots/LunaMobileBotsScreen";
 import { SettingsAboutRouteScreen } from "./features/settings/SettingsAboutRouteScreen";
 import { SettingsNotificationsRouteScreen } from "./features/settings/SettingsNotificationsRouteScreen";
 import { SettingsRouteScreen } from "./features/settings/SettingsRouteScreen";
@@ -215,6 +217,7 @@ const ROUTE_TITLES: Readonly<Record<string, string>> = {
   AddProject: msg("Add project"),
   ThreadFiles: msg("Files"),
   WorkflowRun: msg("Run", { $context: "noun, page title for one workflow run" }),
+  LunaFlowStudio: msg("Workflows", { $context: "navigation tab, durable workflow runs" }),
   SettingsLegal: msg("Legal"),
   ConnectOnboarding: msg("Set up {product}", { product: LUNACODE_CONNECT_NAME }),
   Connections: msg("Environments"),
@@ -797,6 +800,16 @@ const RootStackConfig = createWorkspaceStackNavigator({
     WorkflowStep: createNativeStackScreen({
       screen: WorkflowStepSheet,
       options: sheetRoute({ detent: 0.6, androidMaxDetent: 0.95 }),
+    }),
+    LunaFlowStudio: createNativeStackScreen({
+      screen: LunaMobileFlowStudioScreen,
+      linking: { path: "workflows/:environmentId/studio/:fileName" },
+      options: pageRoute(),
+    }),
+    LunaBots: createNativeStackScreen({
+      screen: LunaMobileBotsScreen,
+      linking: { path: "bots/:environmentId?" },
+      options: pageRoute(),
     }),
     ThreadBackgroundWork: createNativeStackScreen({
       screen: ThreadBackgroundWorkSheet,

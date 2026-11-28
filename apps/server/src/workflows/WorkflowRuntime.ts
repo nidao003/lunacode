@@ -33,6 +33,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { engineTag, text, type WorkflowDefinition } from "./workflow.ts";
+import { isFlowDefinitionFile, loadFlowDefinitionFromJson } from "./flow/FlowLoader.ts";
 import type * as WorkflowEngine from "./WorkflowEngine.ts";
 import * as WorkflowAgentThreads from "./WorkflowAgentThreads.ts";
 import * as WorkflowForge from "./WorkflowForge.ts";
@@ -49,9 +50,9 @@ const HELD_RETRY = "15 seconds";
 const LIST_RETRY = "30 seconds";
 // A leading dot is how a file is kept out: a draft being checked, an editor's swap file.
 // One name in the folder, never a path: the name is also the key a save and a removal go by.
-const DEFINITION_FILE = /^[A-Za-z0-9_][\w.-]*\.(ts|mts|js|mjs)$/;
+const DEFINITION_FILE = /^[A-Za-z0-9_][\w.-]*(\.(ts|mts|js|mjs)|\.flow\.json)$/;
 const NAMING =
-  "Name the file with letters, digits, dashes, underscores and dots, ending in .ts: for example release.ts.";
+  "Name the file with letters, digits, dashes, underscores and dots, ending in .ts or .flow.json: for example release.ts or review.flow.json.";
 
 export class WorkflowDefinitionsLoadError extends Schema.TaggedError<WorkflowDefinitionsLoadError>()(
   "WorkflowDefinitionsLoadError",
@@ -192,6 +193,17 @@ export const loadDefinitions = Effect.fn("WorkflowRuntime.loadDefinitions")(func
 ) {
   const path = yield* Path.Path;
   const file = path.resolve(module);
+  if (isFlowDefinitionFile(file)) {
+    const source = yield* Effect.tryPromise({
+      try: () => NodeFS.promises.readFile(file, "utf8"),
+      catch: (cause) => new WorkflowDefinitionsLoadError({ module, cause }),
+    });
+    const definition = yield* Effect.try({
+      try: () => loadFlowDefinitionFromJson(source, path.basename(module)),
+      catch: (cause) => new WorkflowDefinitionsLoadError({ module, cause }),
+    });
+    return [definition];
+  }
   const url = NodeURL.pathToFileURL(file).href + (load === 0 ? "" : `?${load}`);
   const definitions = yield* Effect.tryPromise({
     try: () => {
@@ -226,6 +238,18 @@ const loadProblem = (
   file: string,
 ): WorkflowDefinitionProblem => {
   const cause = error.cause;
+  if (
+    typeof cause === "object" &&
+    cause !== null &&
+    "line" in cause &&
+    typeof (cause as { line?: unknown }).line === "number"
+  ) {
+    return {
+      message: text(cause),
+      file,
+      line: (cause as { line: number }).line,
+    };
+  }
   const stack = cause instanceof Error ? (cause.stack ?? "") : "";
   const name = loadedFrom.split(/[\\/]/).at(-1) ?? loadedFrom;
   // Node names the place as `file:///…/name.ts:12` or `…/name.ts:12:5`, with a `?n` when reloaded.
@@ -445,7 +469,10 @@ export const make = Effect.fn("WorkflowRuntime.make")(function* <E, R>(
     // A leading dot keeps a file out on purpose; any other code file left out is a surprise.
     const wasMisnamed = misnamed;
     misnamed = listed.value
-      .filter((entry) => /^[^.].*\.(ts|mts|js|mjs)$/.test(entry) && !DEFINITION_FILE.test(entry))
+      .filter(
+        (entry) =>
+          /^[^.].*(\.(ts|mts|js|mjs)|\.flow\.json)$/.test(entry) && !DEFINITION_FILE.test(entry),
+      )
       .map((entry) => ({ message: `It is not loaded. ${NAMING}`, file: entry }));
     const renamed =
       misnamed.map((problem) => problem.file).join("/") !==
@@ -701,7 +728,8 @@ export const make = Effect.fn("WorkflowRuntime.make")(function* <E, R>(
     if (no !== undefined) return refusal([no]);
     const file = path.join(directory, name);
     // Beside the real file, so what it imports resolves the same way. The dot keeps it out.
-    const draft = path.join(directory, `.${name}.check-${loads + 1}${path.extname(name)}`);
+    const ext = isFlowDefinitionFile(name) ? ".flow.json" : path.extname(name);
+    const draft = path.join(directory, `.${name}.check-${loads + 1}${ext}`);
     const checked = yield* fileSystem.writeFileString(draft, source).pipe(
       Effect.andThen(load(draft, name)),
       Effect.ensuring(Effect.ignore(fileSystem.remove(draft))),

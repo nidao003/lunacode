@@ -34,6 +34,7 @@ import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/prefer
 import { formatEnvironmentQueryError } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { LunaMobileWorkflowsRootSwitch } from "../../lunacode/workflows/LunaMobileWorkflowWrappers";
 
 const TABS = [
   {
@@ -257,74 +258,76 @@ export function WorkflowsScreen() {
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
     >
-      {sections.flatMap(({ environment, snapshot, error }) =>
-        snapshot === null && error !== null
-          ? [
-              <Text
-                key={`error:${environment.environmentId}`}
-                className="px-5 py-3 text-sm text-danger-foreground"
-              >
-                {environments.length > 1 ? `${environment.label}: ${error}` : error}
-              </Text>,
-            ]
-          : [],
-      )}
-      {withRuns.length === 0 ? (
-        settled ? (
-          <EmptyState
-            variant="plain"
-            title={gt("No workflow runs yet")}
-            detail={gt(
-              "A workflow ties agents, code, schedules and questions to you into one run that survives restarts. Write one on your computer, under Workflows, then Definitions.",
-            )}
-          />
-        ) : null
-      ) : (
-        <>
-          <View className="px-5 pb-2 pt-3">
-            <SegmentedControl
-              options={TABS.map((option) => ({ ...option, label: m(option.label) }))}
-              selected={shown}
-              onSelect={setTab}
-              role="tab"
+      <LunaMobileWorkflowsRootSwitch environments={environments}>
+        {sections.flatMap(({ environment, snapshot, error }) =>
+          snapshot === null && error !== null
+            ? [
+                <Text
+                  key={`error:${environment.environmentId}`}
+                  className="px-5 py-3 text-sm text-danger-foreground"
+                >
+                  {environments.length > 1 ? `${environment.label}: ${error}` : error}
+                </Text>,
+              ]
+            : [],
+        )}
+        {withRuns.length === 0 ? (
+          settled ? (
+            <EmptyState
+              variant="plain"
+              title={gt("No workflow runs yet")}
+              detail={gt(
+                "A workflow ties agents, code, schedules and questions to you into one run that survives restarts. Write one on your computer, under Workflows, then Definitions.",
+              )}
             />
-          </View>
-          {kinds.length === 0 ? null : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerClassName="gap-2 px-5 pb-2"
-            >
-              <Chip
-                label={gt("All kinds", { $context: "filter, every kind of workflow question" })}
-                selected={kind === null}
-                onPress={() => pickKind(undefined)}
+          ) : null
+        ) : (
+          <>
+            <View className="px-5 pb-2 pt-3">
+              <SegmentedControl
+                options={TABS.map((option) => ({ ...option, label: m(option.label) }))}
+                selected={shown}
+                onSelect={setTab}
+                role="tab"
               />
-              {kinds.map((candidate) => (
+            </View>
+            {kinds.length === 0 ? null : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerClassName="gap-2 px-5 pb-2"
+              >
                 <Chip
-                  key={candidate.kind}
-                  label={`${
-                    candidate.label ??
-                    gt("Other", { $context: "workflow questions that have no kind" })
-                  } ${candidate.count}`}
-                  selected={kind === candidate.kind}
-                  onPress={() => pickKind(candidate.kind)}
+                  label={gt("All kinds", { $context: "filter, every kind of workflow question" })}
+                  selected={kind === null}
+                  onPress={() => pickKind(undefined)}
                 />
-              ))}
-            </ScrollView>
-          )}
-          {withRuns.map(({ environment, snapshot }) => (
-            <EnvironmentRuns
-              key={environment.environmentId}
-              environmentId={environment.environmentId}
-              label={environments.length > 1 ? environment.label : null}
-              snapshot={snapshot}
-              tab={shown}
-              kind={kind}
-            />
-          ))}
-        </>
-      )}
+                {kinds.map((candidate) => (
+                  <Chip
+                    key={candidate.kind}
+                    label={`${
+                      candidate.label ??
+                      gt("Other", { $context: "workflow questions that have no kind" })
+                    } ${candidate.count}`}
+                    selected={kind === candidate.kind}
+                    onPress={() => pickKind(candidate.kind)}
+                  />
+                ))}
+              </ScrollView>
+            )}
+            {withRuns.map(({ environment, snapshot }) => (
+              <EnvironmentRuns
+                key={environment.environmentId}
+                environmentId={environment.environmentId}
+                label={environments.length > 1 ? environment.label : null}
+                snapshot={snapshot}
+                tab={shown}
+                kind={kind}
+              />
+            ))}
+          </>
+        )}
+      </LunaMobileWorkflowsRootSwitch>
     </ScreenScrollView>
   );
 }

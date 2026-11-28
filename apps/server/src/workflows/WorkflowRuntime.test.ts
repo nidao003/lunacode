@@ -566,3 +566,68 @@ it.effect(
       }).pipe(Effect.scoped, Effect.raceFirst(Effect.forever(TestClock.adjust("1 second"))));
     }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
 );
+
+it.effect("loads, validates, hot-reloads, and version-locks *.flow.json definitions", () =>
+  Effect.gen(function* () {
+    const { runtime } = yield* setup();
+    yield* Effect.gen(function* () {
+      const workflows = yield* Workflows.Workflows;
+      const definitions = yield* WorkflowRuntime.WorkflowDefinitions;
+
+      const badJson = yield* definitions.save("broken.flow.json", '{\n  "schemaVersion": 1,\n');
+      assert.isFalse(badJson.changed);
+      assert.isAtLeast(badJson.problems.length, 1);
+
+      const flowJson = JSON.stringify(
+        {
+          schemaVersion: 1,
+          name: "json-gate",
+          version: 1,
+          bots: {
+            planner: { label: "Planner", runtimeMode: "approval-required", workspace: "root" },
+          },
+          triggers: [{ kind: "manual" }],
+          nodes: [
+            {
+              id: "approve",
+              kind: "gate",
+              label: "Confirm",
+              gateMode: "human",
+              titleTemplate: "Proceed?",
+              choices: [{ value: "Yes" }],
+            },
+            { id: "done", kind: "end", label: "Done", outcome: "complete" },
+          ],
+          edges: [
+            { id: "e1", from: "trigger", to: "approve" },
+            { id: "e2", from: "approve", to: "done" },
+          ],
+        },
+        null,
+        2,
+      );
+      const saved = yield* definitions.save("json-gate.flow.json", flowJson);
+      assert.isTrue(saved.changed);
+      assert.deepStrictEqual(saved.problems, []);
+
+      const started = yield* workflows.start("json-gate", {}, { idempotencyKey: "fg-1" });
+      yield* workflows.waitFor(started.runId, (run) => run.status === "waiting");
+
+      // While unfinished run exists, removing or replacing json-gate@1 is refused.
+      const refusedDelete = yield* definitions.remove("json-gate.flow.json");
+      assert.isFalse(refusedDelete.changed);
+      assert.include(refusedDelete.problems[0]?.message ?? "", "json-gate@1");
+
+      yield* workflows.answer(started.runId, "approve", { choice: "Yes" });
+      const completed = yield* workflows.waitFor(
+        started.runId,
+        (run) => run.status === "completed",
+      );
+      assert.equal(completed.status, "completed");
+    }).pipe(
+      Effect.provide(runtime),
+      Effect.scoped,
+      Effect.raceFirst(Effect.forever(TestClock.adjust("1 second"))),
+    );
+  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+);

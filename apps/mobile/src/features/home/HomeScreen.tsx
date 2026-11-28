@@ -104,6 +104,7 @@ import { holdLaunchSplashForHomeRows, settleLaunchSplashHomeRows } from "./home-
 import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
 import { ThreadListFilters } from "./ThreadListFilters";
 import { deriveHomeEmptyState } from "./home-empty-state";
+import { LunaMobileBotsEntryRow } from "../../lunacode/bots/LunaMobileBotsEntryRow";
 
 interface HomeScreenProps {
   /** Whether this list is the one on screen; see `useHomeRouteVisible`. */
@@ -126,6 +127,7 @@ interface HomeScreenProps {
   readonly onProjectChange: (projectKey: string | null) => void;
   readonly onAddConnection: () => void;
   readonly onOpenSettings: () => void;
+  readonly onOpenBots?: (environmentId: EnvironmentId) => void;
   readonly onStartNewTask: () => void;
   readonly onSelectThread: (thread: EnvironmentThreadShell) => void;
   readonly onArchiveThread: (thread: EnvironmentThreadShell) => void;
@@ -628,6 +630,8 @@ export function HomeScreen(props: HomeScreenProps) {
       ? null
       : (props.savedConnectionsById[props.selectedEnvironmentId]?.environmentLabel ??
         "this environment");
+  const botsEntryEnvironmentId =
+    props.selectedEnvironmentId ?? props.environments[0]?.environmentId ?? null;
   const emptyState = deriveHomeEmptyState(props.catalogState, props.projects.length, m);
 
   if (!hasAnyThreads) {
@@ -647,6 +651,14 @@ export function HomeScreen(props: HomeScreenProps) {
               paddingRight: 32 + (contentSideInsets?.right ?? 0),
             }}
           >
+            {props.onOpenBots && botsEntryEnvironmentId ? (
+              <View className="mb-4 w-full max-w-[430px]">
+                <LunaMobileBotsEntryRow
+                  environmentId={botsEntryEnvironmentId}
+                  onPress={props.onOpenBots}
+                />
+              </View>
+            ) : null}
             <View className="w-full max-w-[430px]">
               <EmptyState
                 title={emptyState.title}
@@ -683,6 +695,9 @@ export function HomeScreen(props: HomeScreenProps) {
   const v2ListHeader = (
     <>
       {listHeader}
+      {props.onOpenBots && botsEntryEnvironmentId ? (
+        <LunaMobileBotsEntryRow environmentId={botsEntryEnvironmentId} onPress={props.onOpenBots} />
+      ) : null}
       {Platform.OS === "ios" && workspace ? (
         <ThreadListFilters
           gutter={sidebarSurface ? 8 : 0}
