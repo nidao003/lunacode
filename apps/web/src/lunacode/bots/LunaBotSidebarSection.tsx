@@ -34,6 +34,8 @@ import { useState } from "react";
 
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { useWorkflowEnvironmentIds } from "~/components/workflows/useWorkflowEnvironmentIds";
 import { useNowMinute } from "~/hooks/useNowMinute";
 import { cn } from "~/lib/utils";
 import { useEnvironmentQuery } from "~/state/query";
@@ -59,7 +61,17 @@ export function LunaBotSidebarSection({
   const botsQuery = useEnvironmentQuery(
     environmentId ? serverEnvironment.botsLive({ environmentId, input: {} }) : null,
   );
+  const workflowEnvIds = useWorkflowEnvironmentIds();
+  const workflowsEnabled = Boolean(environmentId && workflowEnvIds.includes(environmentId));
+  const workflowsQuery = useEnvironmentQuery(
+    workflowsEnabled && environmentId
+      ? serverEnvironment.workflowsLive({ environmentId, input: {} })
+      : null,
+  );
   const snapshot = botsQuery.data;
+  const wfQuestionsCount = workflowsQuery.data?.questions?.length ?? 0;
+  const wfActiveRunsCount =
+    workflowsQuery.data?.runs?.filter((run) => run.status === "running").length ?? 0;
   const nowMinuteIso = useNowMinute();
   const parsedNow = Date.parse(nowMinuteIso);
   const nowMs = Number.isNaN(parsedNow) ? 0 : parsedNow;
@@ -199,9 +211,13 @@ export function LunaBotSidebarSection({
             <WorkflowIcon className="size-3.5 shrink-0 opacity-80" />
             <span className="truncate">自动化工作流</span>
           </span>
-          {totalWorking > 0 ? (
+          {wfQuestionsCount > 0 ? (
+            <Badge size="sm" variant="warning">
+              待审批 {wfQuestionsCount}
+            </Badge>
+          ) : wfActiveRunsCount > 0 ? (
             <Badge size="sm" variant="info">
-              {totalWorking} 运行中
+              {wfActiveRunsCount} 运行中
             </Badge>
           ) : null}
         </Link>
@@ -222,6 +238,11 @@ export function LunaBotSidebarSection({
           <span>Bots</span>
           {allNodes.length > 0 ? (
             <span className="font-mono text-3xs opacity-70">({allNodes.length})</span>
+          ) : null}
+          {totalWorking > 0 ? (
+            <Badge size="sm" variant="info" className="ml-1">
+              {totalWorking} 工作中
+            </Badge>
           ) : null}
         </button>
 
@@ -311,7 +332,7 @@ export function LunaBotSidebarSection({
               return (
                 <div
                   key={node.bot.id}
-                  className="rounded-lg border border-transparent bg-background/25 px-1 py-1 hover:border-sidebar-border/60"
+                  className="group rounded-lg border border-transparent bg-background/25 px-1 py-1 hover:border-sidebar-border/60"
                 >
                   <div className="flex items-center gap-1.5 px-1">
                     <button
@@ -329,12 +350,21 @@ export function LunaBotSidebarSection({
                         <span className="block truncate text-xs font-medium text-sidebar-foreground">
                           {node.bot.name}
                         </span>
-                        <span className="block truncate text-3xs text-sidebar-muted-foreground">
+                        <span
+                          className={cn(
+                            "block truncate text-3xs",
+                            node.needsYouCount > 0 && node.latestTask?.pendingQuestion
+                              ? "text-warning-foreground"
+                              : "text-sidebar-muted-foreground",
+                          )}
+                        >
                           {workingCount > 0
                             ? `${workingCount} 个运行中`
-                            : node.latestTask
-                              ? `#${node.latestTask.number} ${node.latestTask.title}`
-                              : node.bot.role}
+                            : node.needsYouCount > 0 && node.latestTask?.pendingQuestion
+                              ? `待拍板: ${node.latestTask.pendingQuestion.prompt}`
+                              : node.latestTask
+                                ? `#${node.latestTask.number} ${node.latestTask.title}`
+                                : node.bot.role}
                         </span>
                       </span>
                     </button>
@@ -353,6 +383,21 @@ export function LunaBotSidebarSection({
                           {node.elapsedLabel}
                         </span>
                       ) : null}
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <button
+                              type="button"
+                              aria-label={`进入 ${node.bot.name} 主对话`}
+                              className="inline-flex size-5 cursor-pointer items-center justify-center rounded text-sidebar-muted-foreground opacity-80 transition-opacity hover:bg-sidebar-row-hover hover:text-sidebar-foreground group-hover:opacity-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                              onClick={() => void handleOpenHomeChat(node.bot)}
+                            >
+                              <MessageSquareIcon className="size-3" />
+                            </button>
+                          }
+                        />
+                        <TooltipPopup>直接打开主对话</TooltipPopup>
+                      </Tooltip>
                       <button
                         type="button"
                         aria-label={expanded ? `收起 ${node.bot.name}` : `展开 ${node.bot.name}`}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import type { WorkflowQuestion, WorkflowRun, WorkflowStep } from "@t3tools/contracts";
 
 import {
+  FLOW_TEMPLATES,
   buildChatEditPrompt,
   buildLiveRunGraphOverlay,
   computeFlowDryRunClient,
@@ -13,7 +14,7 @@ import {
 } from "./workflowFlow.logic.ts";
 
 describe("workflowFlow.logic", () => {
-  it("starter templates validate with zero errors", () => {
+  it("all starter and showcase templates validate with zero errors and build valid DAG layouts", () => {
     for (const template of ["parallel-review", "human-gate", "single-agent"] as const) {
       const spec = createStarterFlowSpec({
         name: `demo-${template}`,
@@ -23,6 +24,26 @@ describe("workflowFlow.logic", () => {
       const issues = validateFlowClient(spec);
       expect(issues.filter((i) => i.severity === "error")).toEqual([]);
     }
+    expect(FLOW_TEMPLATES).toHaveLength(8);
+    for (const item of FLOW_TEMPLATES) {
+      const spec = createStarterFlowSpec({
+        name: item.defaultFileName.replace(/\.flow\.json$/i, ""),
+        template: item.id,
+        project: "proj-1",
+      });
+      const report = computeFlowDryRunClient(spec);
+      expect(report.valid).toBe(true);
+      expect(report.issues.filter((i) => i.severity === "error")).toEqual([]);
+      expect(computeFlowLayout(spec).layers.length).toBeGreaterThanOrEqual(1);
+    }
+    const gatedPlan = createStarterFlowSpec({
+      name: "feature-plan-ship",
+      template: "feature-plan-ship",
+      project: "proj-1",
+    });
+    expect(
+      computeFlowDryRunClient(gatedPlan).issues.some((i) => i.code === "high_risk_without_gate"),
+    ).toBe(false);
   });
 
   it("increments version filename cleanly on createNewVersion", () => {

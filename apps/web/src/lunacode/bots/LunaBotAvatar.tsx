@@ -1,6 +1,26 @@
 import type { BotAccent, BotAvatarPreset, BotTaskStatus } from "@t3tools/contracts";
+import { LUNA_BOT_AVATAR_META } from "@t3tools/shared/lunacodeBotPresets";
 
+import builderAvatarImg from "../../../../../assets/lunacode/bots/builder.png";
+import coordinatorAvatarImg from "../../../../../assets/lunacode/bots/coordinator.png";
+import opsAvatarImg from "../../../../../assets/lunacode/bots/ops.png";
+import reviewerAvatarImg from "../../../../../assets/lunacode/bots/reviewer.png";
+import scoutAvatarImg from "../../../../../assets/lunacode/bots/scout.png";
+import scribeAvatarImg from "../../../../../assets/lunacode/bots/scribe.png";
+import sentinelAvatarImg from "../../../../../assets/lunacode/bots/sentinel.png";
+import sparkAvatarImg from "../../../../../assets/lunacode/bots/spark.png";
 import { cn } from "~/lib/utils";
+
+const BOT_AVATAR_IMAGES: Readonly<Record<BotAvatarPreset, string>> = {
+  scout: scoutAvatarImg,
+  reviewer: reviewerAvatarImg,
+  sentinel: sentinelAvatarImg,
+  scribe: scribeAvatarImg,
+  builder: builderAvatarImg,
+  coordinator: coordinatorAvatarImg,
+  ops: opsAvatarImg,
+  spark: sparkAvatarImg,
+};
 
 export const BOT_ACCENT_STYLES: Readonly<
   Record<
@@ -16,35 +36,35 @@ export const BOT_ACCENT_STYLES: Readonly<
 > = {
   info: {
     tileBg: "bg-info/15 text-info-foreground",
-    ring: "ring-info/30",
+    ring: "ring-info/35",
     text: "text-info-foreground",
     dot: "bg-info",
     badgeVariant: "info",
   },
   success: {
     tileBg: "bg-success/15 text-success-foreground",
-    ring: "ring-success/30",
+    ring: "ring-success/35",
     text: "text-success-foreground",
     dot: "bg-success",
     badgeVariant: "success",
   },
   warning: {
     tileBg: "bg-warning/15 text-warning-foreground",
-    ring: "ring-warning/30",
+    ring: "ring-warning/35",
     text: "text-warning-foreground",
     dot: "bg-warning",
     badgeVariant: "warning",
   },
   primary: {
     tileBg: "bg-primary/15 text-primary",
-    ring: "ring-primary/30",
+    ring: "ring-primary/35",
     text: "text-primary",
     dot: "bg-primary",
     badgeVariant: "outline",
   },
   destructive: {
     tileBg: "bg-destructive/15 text-destructive-foreground",
-    ring: "ring-destructive/30",
+    ring: "ring-destructive/35",
     text: "text-destructive-foreground",
     dot: "bg-destructive",
     badgeVariant: "error",
@@ -97,17 +117,17 @@ export const BOT_TASK_STATUS_META: Readonly<
 
 export const BOT_AVATAR_PRESETS: ReadonlyArray<{
   readonly value: BotAvatarPreset;
+  readonly personaName: string;
+  readonly styleLabel: string;
   readonly label: string;
-}> = [
-  { value: "scout", label: "侦察" },
-  { value: "reviewer", label: "审查" },
-  { value: "sentinel", label: "守望" },
-  { value: "scribe", label: "文档" },
-  { value: "builder", label: "构建" },
-  { value: "coordinator", label: "调度" },
-  { value: "ops", label: "运维" },
-  { value: "spark", label: "灵感" },
-];
+  readonly summary: string;
+}> = LUNA_BOT_AVATAR_META.map((item) => ({
+  value: item.preset,
+  personaName: item.personaName,
+  styleLabel: item.styleLabel,
+  label: item.label,
+  summary: item.summary,
+}));
 
 export const BOT_ACCENT_OPTIONS: ReadonlyArray<{
   readonly value: BotAccent;
@@ -121,115 +141,6 @@ export const BOT_ACCENT_OPTIONS: ReadonlyArray<{
   { value: "neutral", label: "石板" },
 ];
 
-function BotGlyph({ preset }: { readonly preset: BotAvatarPreset }) {
-  switch (preset) {
-    case "scout":
-      return (
-        <svg aria-hidden viewBox="0 0 24 24" className="size-[62%]" fill="none">
-          <circle cx="12" cy="12" r="7.5" stroke="currentColor" strokeWidth="1.8" />
-          <path d="M9.5 14.5L11 10.5L15 9L13.5 13L9.5 14.5Z" fill="currentColor" />
-        </svg>
-      );
-    case "reviewer":
-      return (
-        <svg aria-hidden viewBox="0 0 24 24" className="size-[62%]" fill="none">
-          <path
-            d="M12 3.5L19 6.5V11.5C19 15.8 16 19.2 12 20.5C8 19.2 5 15.8 5 11.5V6.5L12 3.5Z"
-            stroke="currentColor"
-            strokeWidth="1.8"
-          />
-          <path
-            d="M9.2 12.2L11.2 14.2L15 10"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-    case "sentinel":
-      return (
-        <svg aria-hidden viewBox="0 0 24 24" className="size-[62%]" fill="none">
-          <rect
-            x="4.5"
-            y="6"
-            width="15"
-            height="12"
-            rx="4"
-            stroke="currentColor"
-            strokeWidth="1.8"
-          />
-          <circle cx="9.5" cy="12" r="1.4" fill="currentColor" />
-          <circle cx="14.5" cy="12" r="1.4" fill="currentColor" />
-        </svg>
-      );
-    case "scribe":
-      return (
-        <svg aria-hidden viewBox="0 0 24 24" className="size-[62%]" fill="none">
-          <path
-            d="M6.5 4.5H15L18.5 8V19.5H6.5V4.5Z"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M9.5 11.5H15.5M9.5 15H13.5"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-          />
-        </svg>
-      );
-    case "builder":
-      return (
-        <svg aria-hidden viewBox="0 0 24 24" className="size-[62%]" fill="none">
-          <path
-            d="M7 7H17V17H7V7ZM10 4V7M14 4V7M10 17V20M14 17V20"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-          />
-        </svg>
-      );
-    case "coordinator":
-      return (
-        <svg aria-hidden viewBox="0 0 24 24" className="size-[62%]" fill="none">
-          <circle cx="12" cy="6.5" r="2.2" fill="currentColor" />
-          <circle cx="6.5" cy="16.5" r="2.2" fill="currentColor" />
-          <circle cx="17.5" cy="16.5" r="2.2" fill="currentColor" />
-          <path
-            d="M11 8.5L7.5 14.5M13 8.5L16.5 14.5M8.7 16.5H15.3"
-            stroke="currentColor"
-            strokeWidth="1.6"
-          />
-        </svg>
-      );
-    case "ops":
-      return (
-        <svg aria-hidden viewBox="0 0 24 24" className="size-[62%]" fill="none">
-          <path
-            d="M5 13H8.5L10.5 7.5L13.5 16.5L15.5 13H19"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-    case "spark":
-      return (
-        <svg aria-hidden viewBox="0 0 24 24" className="size-[62%]" fill="none">
-          <path
-            d="M12 4L14.2 9.8L20 12L14.2 14.2L12 20L9.8 14.2L4 12L9.8 9.8L12 4Z"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-  }
-}
-
 export function LunaBotAvatar({
   avatar,
   accent,
@@ -239,30 +150,46 @@ export function LunaBotAvatar({
 }: {
   readonly avatar: BotAvatarPreset;
   readonly accent: BotAccent;
-  readonly size?: "sm" | "md" | "lg";
+  readonly size?: "xs" | "sm" | "md" | "lg" | "xl";
   readonly working?: boolean;
   readonly className?: string;
 }) {
   const palette = BOT_ACCENT_STYLES[accent];
   const sizeClass =
-    size === "sm" ? "size-5 rounded-md" : size === "lg" ? "size-9 rounded-xl" : "size-7 rounded-lg";
+    size === "xs"
+      ? "size-4 rounded"
+      : size === "sm"
+        ? "size-5 rounded-md"
+        : size === "lg"
+          ? "size-9 rounded-xl"
+          : size === "xl"
+            ? "size-11 rounded-xl"
+            : "size-7 rounded-lg";
+  const dotSizeClass =
+    size === "xs" || size === "sm" ? "size-1.5" : size === "xl" ? "size-2.5" : "size-2";
 
   return (
     <span
       className={cn(
-        "relative inline-flex shrink-0 items-center justify-center ring-1",
+        "relative inline-flex shrink-0 items-center justify-center overflow-visible ring-1",
         sizeClass,
         palette.tileBg,
         palette.ring,
         className,
       )}
     >
-      <BotGlyph preset={avatar} />
+      <img
+        src={BOT_AVATAR_IMAGES[avatar]}
+        alt=""
+        draggable={false}
+        className="size-full rounded-[inherit] object-cover object-top select-none"
+      />
       {working ? (
         <span
           aria-hidden
           className={cn(
-            "absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2 ring-background",
+            "absolute -right-0.5 -bottom-0.5 rounded-full ring-2 ring-background",
+            dotSizeClass,
             palette.dot,
           )}
         />

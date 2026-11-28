@@ -10,33 +10,24 @@ import {
   type WorkflowRun,
   type WorkflowStep,
 } from "@t3tools/contracts";
+import {
+  DEFAULT_SEED_FLOW_TEMPLATES,
+  FLOW_TEMPLATES,
+  type FlowStarterTemplateId,
+  type FlowStarterTemplateMeta,
+  createStarterFlowSpec,
+  formatFlowSpecJson,
+} from "@t3tools/shared/lunacodeFlowPresets";
 import * as Schema from "effect/Schema";
 
-export type FlowStarterTemplateId = "parallel-review" | "human-gate" | "single-agent";
-
-export interface FlowStarterTemplateMeta {
-  readonly id: FlowStarterTemplateId;
-  readonly label: string;
-  readonly description: string;
-}
-
-export const FLOW_TEMPLATES: ReadonlyArray<FlowStarterTemplateMeta> = [
-  {
-    id: "parallel-review",
-    label: "并行多 Bot 评审流",
-    description: "双 Worktree 并行实现/测试 -> 评审闭环（含熔断） -> 人工批准发布",
-  },
-  {
-    id: "human-gate",
-    label: "人工审批门流程",
-    description: "规划 Bot 输出方案 -> 人工确认网关 -> 执行 Bot 落地实施",
-  },
-  {
-    id: "single-agent",
-    label: "单 Agent 自动任务",
-    description: "单节点快速执行与结果收口，适合定时巡检或轻量自动化",
-  },
-];
+export {
+  DEFAULT_SEED_FLOW_TEMPLATES,
+  FLOW_TEMPLATES,
+  type FlowStarterTemplateId,
+  type FlowStarterTemplateMeta,
+  createStarterFlowSpec,
+  formatFlowSpecJson,
+};
 
 const decodeStrictFlowSpec = Schema.decodeUnknownSync(FlowSpec, { onExcessProperty: "error" });
 
@@ -91,10 +82,6 @@ export function parseFlowSpecSafe(source: string): ParseFlowSpecResult {
   }
 }
 
-export function formatFlowSpecJson(spec: FlowSpec): string {
-  return `${JSON.stringify(spec, null, 2)}\n`;
-}
-
 function sanitizeFlowIdentifier(input: string, fallback = "custom-flow"): string {
   const cleaned = input
     .trim()
@@ -132,286 +119,6 @@ export function nextFlowVersionTarget(
       ...spec,
       version: nextVersion,
     },
-  };
-}
-
-export function createStarterFlowSpec(opts: {
-  readonly name: string;
-  readonly template?: FlowStarterTemplateId;
-  readonly project?: string;
-  readonly providerInstanceId?: string;
-  readonly model?: string;
-}): FlowSpec {
-  const safeName = sanitizeFlowIdentifier(opts.name, "team-flow");
-  const project =
-    opts.project && opts.project.trim().length > 0 ? opts.project.trim() : "default-project";
-  const providerMeta =
-    opts.providerInstanceId && opts.model
-      ? { providerInstanceId: opts.providerInstanceId, model: opts.model }
-      : {};
-  const template = opts.template ?? "parallel-review";
-
-  if (template === "single-agent") {
-    return {
-      schemaVersion: 1,
-      name: safeName,
-      version: 1,
-      title: "单 Bot 自动任务",
-      description: "由单个智能体独立完成任务并在结束时输出总结。",
-      maxHops: 2,
-      bots: {
-        worker: {
-          label: "执行 Bot",
-          runtimeMode: "approval-required",
-          interactionMode: "default",
-          workspace: "root",
-          rolePrompt: "仔细分析需求并交付可验证的结果。",
-          ...providerMeta,
-        },
-      },
-      triggers: [{ kind: "manual" }],
-      nodes: [
-        {
-          id: "run_task",
-          kind: "agent",
-          label: "执行核心任务",
-          botId: "worker",
-          project,
-          promptTemplate: "请完成以下任务：\n{{payload.task}}",
-        },
-        {
-          id: "done",
-          kind: "end",
-          label: "完成结束",
-          outcome: "complete",
-          reasonTemplate: "任务已完成",
-        },
-      ],
-      edges: [
-        { id: "e1", from: "trigger", to: "run_task" },
-        { id: "e2", from: "run_task", to: "done" },
-      ],
-    };
-  }
-
-  if (template === "human-gate") {
-    return {
-      schemaVersion: 1,
-      name: safeName,
-      version: 1,
-      title: "方案评审与执行流",
-      description: "先出方案与排查，再经人类拍板后执行修改。",
-      maxHops: 2,
-      bots: {
-        planner: {
-          label: "架构 Planner",
-          runtimeMode: "approval-required",
-          interactionMode: "plan",
-          workspace: "root",
-          rolePrompt: "先调研代码库现状与影响面，给出清晰的修改方案。",
-          ...providerMeta,
-        },
-        executor: {
-          label: "工程 Executor",
-          runtimeMode: "approval-required",
-          interactionMode: "default",
-          workspace: "worktree",
-          workspaceBaseRef: "HEAD",
-          rolePrompt: "按已批准的方案实现代码改动并运行相关测试。",
-          ...providerMeta,
-        },
-      },
-      triggers: [{ kind: "manual" }],
-      nodes: [
-        {
-          id: "plan",
-          kind: "agent",
-          label: "制定方案",
-          botId: "planner",
-          project,
-          promptTemplate: "请针对以下需求制定方案：\n{{payload.task}}",
-          returns: [{ name: "summary", type: "string", description: "方案摘要" }],
-        },
-        {
-          id: "approve_plan",
-          kind: "gate",
-          label: "方案人工确认",
-          gateMode: "human",
-          askKind: "plan_approval",
-          titleTemplate: "是否按以下方案继续执行？",
-          choices: [
-            { value: "批准执行", description: "进入执行节点落地代码" },
-            { value: "打回重做", description: "返回 Planner 重新调整", requireReason: true },
-            { value: "取消中止", description: "结束本次工作流" },
-          ],
-        },
-        {
-          id: "execute",
-          kind: "agent",
-          label: "落地实现",
-          botId: "executor",
-          project,
-          promptTemplate:
-            "已获人工批准，请实现方案：\n摘要：{{nodes.plan.value.summary}}\n补充意见：{{nodes.approve_plan.reason}}",
-        },
-        {
-          id: "done",
-          kind: "end",
-          label: "交付完成",
-          outcome: "complete",
-        },
-        {
-          id: "aborted",
-          kind: "end",
-          label: "已取消",
-          outcome: "stop",
-          reasonTemplate: "人工取消：{{nodes.approve_plan.reason}}",
-        },
-      ],
-      edges: [
-        { id: "e1", from: "trigger", to: "plan" },
-        { id: "e2", from: "plan", to: "approve_plan" },
-        {
-          id: "e3",
-          from: "approve_plan",
-          to: "execute",
-          when: "nodes.approve_plan.choice == '批准执行'",
-        },
-        {
-          id: "e4",
-          from: "approve_plan",
-          to: "plan",
-          when: "nodes.approve_plan.choice == '打回重做'",
-          isLoop: true,
-        },
-        {
-          id: "e5",
-          from: "approve_plan",
-          to: "aborted",
-          when: "nodes.approve_plan.choice == '取消中止'",
-        },
-        { id: "e6", from: "execute", to: "done" },
-      ],
-    };
-  }
-
-  // Default: "parallel-review"
-  return {
-    schemaVersion: 1,
-    name: safeName,
-    version: 1,
-    title: "并行多 Bot 协作与评审流",
-    description:
-      "两个独立 Worktree Bot 并行研发与验证，汇总给 Reviewer 评审，未通过可有限回流修复，最后人工确认。",
-    maxHops: 2,
-    bots: {
-      coder: {
-        label: "研发 Bot",
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        workspace: "worktree",
-        workspaceBaseRef: "HEAD",
-        rolePrompt: "专注实现改动并确保局部可构建。",
-        ...providerMeta,
-      },
-      tester: {
-        label: "测试 Bot",
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        workspace: "worktree",
-        workspaceBaseRef: "HEAD",
-        rolePrompt: "编写覆盖边界条件的自动化测试并验证回归。",
-        ...providerMeta,
-      },
-      reviewer: {
-        label: "评审 Bot",
-        runtimeMode: "approval-required",
-        interactionMode: "plan",
-        workspace: "root",
-        rolePrompt: "严格审查改动正确性与测试覆盖率，并输出结构化结论。",
-        ...providerMeta,
-      },
-    },
-    triggers: [{ kind: "manual" }],
-    nodes: [
-      {
-        id: "implement",
-        kind: "agent",
-        label: "并行功能实现",
-        botId: "coder",
-        project,
-        promptTemplate: "请在隔离 worktree 中完成任务：{{payload.task}}",
-        returns: [{ name: "summary", type: "string", description: "实现说明" }],
-      },
-      {
-        id: "write_tests",
-        kind: "agent",
-        label: "并行补充测试",
-        botId: "tester",
-        project,
-        promptTemplate: "请为以下任务设计并编写测试：{{payload.task}}",
-        returns: [{ name: "checks", type: "string", description: "测试运行结论" }],
-      },
-      {
-        id: "review",
-        kind: "agent",
-        label: "联合代码评审",
-        botId: "reviewer",
-        project,
-        promptTemplate:
-          "请评审研发与测试产出：\n实现：{{nodes.implement.value.summary}}\n测试：{{nodes.write_tests.value.checks}}",
-        returns: [
-          { name: "approved", type: "boolean", description: "是否通过评审" },
-          { name: "notes", type: "string", description: "评审意见" },
-        ],
-      },
-      {
-        id: "approve_ship",
-        kind: "gate",
-        label: "人工发布审批",
-        gateMode: "coordinator_then_human",
-        askKind: "ship_approval",
-        titleTemplate: "所有检查已通过，是否合并并发布？",
-        choices: [
-          { value: "批准发布", description: "完成本次工作流" },
-          { value: "继续打磨", description: "打回给研发节点微调", requireReason: true },
-        ],
-      },
-      {
-        id: "done",
-        kind: "end",
-        label: "流程完成",
-        outcome: "complete",
-        reasonTemplate: "评审与人工确认均已通过",
-      },
-    ],
-    edges: [
-      { id: "e1", from: "trigger", to: "implement" },
-      { id: "e2", from: "trigger", to: "write_tests" },
-      { id: "e3", from: "implement", to: "review" },
-      { id: "e4", from: "write_tests", to: "review" },
-      { id: "e5", from: "review", to: "approve_ship", when: "nodes.review.value.approved == true" },
-      {
-        id: "e6",
-        from: "review",
-        to: "implement",
-        when: "!nodes.review.value.approved",
-        isLoop: true,
-      },
-      {
-        id: "e7",
-        from: "approve_ship",
-        to: "done",
-        when: "nodes.approve_ship.choice == '批准发布'",
-      },
-      {
-        id: "e8",
-        from: "approve_ship",
-        to: "implement",
-        when: "nodes.approve_ship.choice == '继续打磨'",
-        isLoop: true,
-      },
-    ],
   };
 }
 
@@ -558,6 +265,31 @@ export function computeFlowDryRunClient(spec: FlowSpec): FlowDryRunReport {
     });
   }
 
+  const forwardEdges = spec.edges.filter((edge) => !edge.isLoop);
+  const { layers, cycleNodes } = computeForwardLayersClient(spec.nodes, forwardEdges);
+
+  const gateGatedNodes = (() => {
+    const outAdj = new Map<string, Array<string>>();
+    for (const edge of forwardEdges) {
+      if (edge.from === "trigger") continue;
+      const list = outAdj.get(edge.from) ?? [];
+      list.push(edge.to);
+      outAdj.set(edge.from, list);
+    }
+    const gated = new Set<string>();
+    const stack = spec.nodes.filter((n) => n.kind === "gate").map((n) => n.id);
+    while (stack.length > 0) {
+      const cur = stack.pop()!;
+      for (const next of outAdj.get(cur) ?? []) {
+        if (!gated.has(next)) {
+          gated.add(next);
+          stack.push(next);
+        }
+      }
+    }
+    return gated;
+  })();
+
   const untrustedSet = new Set<string>();
   const highRiskNodes: Array<{
     readonly nodeId: string;
@@ -594,14 +326,14 @@ export function computeFlowDryRunClient(spec: FlowSpec): FlowDryRunReport {
       }
       extractPayloadPathsFromTemplate(node.promptTemplate, untrustedSet);
       const rt = effectiveRuntimeMode(spec, node);
-      if (rt === "full-access") {
-        const reason = `权限模式为 full-access（工作区: ${effectiveWorkspace(spec, node)}）`;
+      if (rt === "full-access" && !gateGatedNodes.has(node.id)) {
+        const reason = `以 full-access 权限运行且前方无人工 Gate 审批节点（工作区: ${effectiveWorkspace(spec, node)}）`;
         highRiskNodes.push({ nodeId: node.id, label: node.label, reason });
         issues.push({
-          code: "high_risk_full_access",
+          code: "high_risk_without_gate",
           severity: "warning",
           nodeId: node.id,
-          message: `提示：节点 "${node.label}" 使用 ${reason}。`,
+          message: `建议在 full-access 节点 "${node.label}" 前置人工 Gate 节点。`,
         });
       }
     } else if (node.kind === "gate") {
@@ -622,9 +354,6 @@ export function computeFlowDryRunClient(spec: FlowSpec): FlowDryRunReport {
       });
     }
   }
-
-  const forwardEdges = spec.edges.filter((edge) => !edge.isLoop);
-  const { layers, cycleNodes } = computeForwardLayersClient(spec.nodes, forwardEdges);
   if (cycleNodes.length > 0) {
     issues.push({
       code: "dag_cycle_detected",

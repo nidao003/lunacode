@@ -154,6 +154,9 @@ export function LunaBotTaskDetailPanel({
   const canOperate = useAtomValue(serverEnvironment.upsertBotTask.permissionAtom(environmentId));
   const canComment = useAtomValue(serverEnvironment.commentBotTask.permissionAtom(environmentId));
   const canAnswer = useAtomValue(serverEnvironment.answerBotTask.permissionAtom(environmentId));
+  const canStartWorkflow = useAtomValue(
+    serverEnvironment.startWorkflowRun.permissionAtom(environmentId),
+  );
 
   const upsertTask = useAtomCommand(serverEnvironment.upsertBotTask, {
     label: "bot task status",
@@ -167,6 +170,10 @@ export function LunaBotTaskDetailPanel({
     label: "bot task answer",
     reportFailure: false,
   });
+  const startWorkflowRun = useAtomCommand(serverEnvironment.startWorkflowRun, {
+    label: "bot panel start workflow",
+    reportFailure: false,
+  });
 
   const [tab, setTab] = useState<InspectorTab>("task");
   const [editingDoneMeansForTaskId, setEditingDoneMeansForTaskId] = useState<string | null>(null);
@@ -175,7 +182,29 @@ export function LunaBotTaskDetailPanel({
   const [commentText, setCommentText] = useState("");
   const [notifyBot, setNotifyBot] = useState(true);
   const [commenting, setCommenting] = useState(false);
+  const [startingWorkflowName, setStartingWorkflowName] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const handleStartWorkflow = async (workflowName: string) => {
+    if (!canStartWorkflow || startingWorkflowName !== null) return;
+    setStartingWorkflowName(workflowName);
+    setActionError(null);
+    const result = await startWorkflowRun({
+      environmentId,
+      input: { workflow: workflowName },
+    });
+    setStartingWorkflowName(null);
+    if (result._tag === "Success") {
+      void navigate({
+        to: "/workflows",
+        search: { env: environmentId, run: result.value.runId },
+      });
+      return;
+    }
+    if (!isAtomCommandInterrupted(result)) {
+      setActionError(extractBotErrorMessage(squashAtomCommandFailure(result)));
+    }
+  };
 
   const botAccent = BOT_ACCENT_STYLES[bot.accent];
   const project =
@@ -620,20 +649,53 @@ export function LunaBotTaskDetailPanel({
           </div>
         ) : tab === "connectors" ? (
           <div className="space-y-3 text-xs">
-            <div className="rounded-xl border border-border bg-background/60 p-3 space-y-2">
+            <div className="rounded-xl border border-border bg-background/60 p-3 space-y-2.5">
               <p className="font-semibold text-foreground">关联可视化工作流 (.flow.json)</p>
               {bot.linkedWorkflowNames.length === 0 ? (
                 <p className="text-muted-foreground">尚未绑定可视化工作流。</p>
               ) : (
-                <div className="flex flex-wrap gap-1.5">
+                <div className="space-y-1.5">
                   {bot.linkedWorkflowNames.map((name) => (
-                    <Badge key={name} variant="info">
-                      <WorkflowIcon />
-                      {name}
-                    </Badge>
+                    <div
+                      key={name}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card/70 px-2.5 py-1.5"
+                    >
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <WorkflowIcon className="size-3.5 shrink-0 text-info-foreground" />
+                        <span className="truncate font-mono text-2xs text-foreground">{name}</span>
+                      </span>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button
+                          size="micro"
+                          variant="outline"
+                          disabled={!canStartWorkflow || startingWorkflowName !== null}
+                          onClick={() => void handleStartWorkflow(name)}
+                        >
+                          <PlayIcon />
+                          {startingWorkflowName === name ? "启动中..." : "运行"}
+                        </Button>
+                        <Button
+                          size="micro"
+                          variant="ghost"
+                          onClick={() =>
+                            void navigate({
+                              to: "/workflows",
+                              search: {
+                                env: environmentId,
+                                definitions: true,
+                                file: `${name}.flow.json`,
+                              },
+                            })
+                          }
+                        >
+                          画布
+                        </Button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
+              {actionError ? <p className="text-2xs text-destructive">{actionError}</p> : null}
               <Button
                 size="compact"
                 variant="outline"

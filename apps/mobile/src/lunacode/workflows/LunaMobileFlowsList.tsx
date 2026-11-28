@@ -1,6 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
+  DEFAULT_SEED_FLOW_TEMPLATES,
   createStarterFlowSpec,
+  FLOW_TEMPLATES,
   type FlowStarterTemplateId,
   formatFlowSpecJson,
   isFlowDefinitionFile,
@@ -10,7 +12,7 @@ import {
 } from "@t3tools/client-runtime/lunacode/workflow-flow";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useState } from "react";
-import { View } from "react-native";
+import { ScrollView, View } from "react-native";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
@@ -53,17 +55,23 @@ function EnvironmentFlowList({
     reportFailure: false,
   });
 
-  const [newName, setNewName] = useState("team-review");
-  const [template, setTemplate] = useState<FlowStarterTemplateId>("parallel-review");
+  const [newName, setNewName] = useState("bug-repro-fix");
+  const [nameEdited, setNameEdited] = useState(false);
+  const [template, setTemplate] = useState<FlowStarterTemplateId>("bug-repro-fix");
   const [creating, setCreating] = useState(false);
+  const [seedingDefaults, setSeedingDefaults] = useState(false);
   const [startingFile, setStartingFile] = useState<string | null>(null);
 
   const flowFiles = (defQuery.data?.files ?? []).filter((f) => isFlowDefinitionFile(f.name));
+  const existingFileSet = new Set(flowFiles.map((f) => f.name.toLowerCase()));
+  const missingDefaults = DEFAULT_SEED_FLOW_TEMPLATES.filter(
+    (item) => !existingFileSet.has(item.defaultFileName.toLowerCase()),
+  );
 
   const createNew = async () => {
     if (creating || !canSave) return;
     setCreating(true);
-    const fileName = normalizeFlowFileName(newName, "team-review");
+    const fileName = normalizeFlowFileName(newName, "bug-repro-fix");
     const defaultProvider = providers.find((p) => p.enabled && p.models.length > 0);
     const defaultModel =
       defaultProvider?.models.find((m) => m.isDefault) ?? defaultProvider?.models[0];
@@ -84,6 +92,32 @@ function EnvironmentFlowList({
       return;
     }
     onOpenStudio(environmentId, fileName);
+  };
+
+  const seedDefaults = async () => {
+    if (seedingDefaults || !canSave || missingDefaults.length === 0) return;
+    setSeedingDefaults(true);
+    const defaultProvider = providers.find((p) => p.enabled && p.models.length > 0);
+    const defaultModel =
+      defaultProvider?.models.find((m) => m.isDefault) ?? defaultProvider?.models[0];
+    for (const item of missingDefaults) {
+      const spec = createStarterFlowSpec({
+        name: item.defaultFileName.replace(/\.flow\.json$/i, ""),
+        template: item.id,
+        ...(envProjects[0]?.id ? { project: envProjects[0].id } : {}),
+        ...(defaultProvider?.instanceId ? { providerInstanceId: defaultProvider.instanceId } : {}),
+        ...(defaultModel?.slug ? { model: defaultModel.slug } : {}),
+      });
+      const res = await saveDef({
+        environmentId,
+        input: { name: item.defaultFileName, source: formatFlowSpecJson(spec) },
+      });
+      if (res._tag === "Failure") {
+        reportFailure("导入默认案例失败", res);
+        break;
+      }
+    }
+    setSeedingDefaults(false);
   };
 
   const launch = async (workflowName: string, fileName: string) => {
@@ -113,36 +147,48 @@ function EnvironmentFlowList({
           <Text className="font-t3-medium text-sm text-foreground">新建可视化工作流</Text>
           <TextInput
             value={newName}
-            onChangeText={setNewName}
-            placeholder="文件名（如 team-review）"
+            onChangeText={(text) => {
+              setNameEdited(true);
+              setNewName(text);
+            }}
+            placeholder="文件名（如 bug-repro-fix）"
           />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View className="flex-row gap-2 pb-1">
+              {FLOW_TEMPLATES.map((item) => (
+                <Chip
+                  key={item.id}
+                  label={item.label}
+                  size="small"
+                  selected={template === item.id}
+                  onPress={() => {
+                    setTemplate(item.id);
+                    if (!nameEdited) {
+                      setNewName(item.defaultFileName.replace(/\.flow\.json$/i, ""));
+                    }
+                  }}
+                />
+              ))}
+            </View>
+          </ScrollView>
           <View className="flex-row flex-wrap gap-2">
-            <Chip
-              label="并行评审流"
-              size="small"
-              selected={template === "parallel-review"}
-              onPress={() => setTemplate("parallel-review")}
+            <Button
+              tone="primary"
+              size="compact"
+              label="创建并编排"
+              loading={creating}
+              onPress={() => void createNew()}
             />
-            <Chip
-              label="人工审批流"
-              size="small"
-              selected={template === "human-gate"}
-              onPress={() => setTemplate("human-gate")}
-            />
-            <Chip
-              label="单 Bot 任务"
-              size="small"
-              selected={template === "single-agent"}
-              onPress={() => setTemplate("single-agent")}
-            />
+            {missingDefaults.length > 0 ? (
+              <Button
+                tone="secondary"
+                size="compact"
+                label={`一键导入默认案例 (${missingDefaults.length})`}
+                loading={seedingDefaults}
+                onPress={() => void seedDefaults()}
+              />
+            ) : null}
           </View>
-          <Button
-            tone="primary"
-            size="compact"
-            label="创建并编排"
-            loading={creating}
-            onPress={() => void createNew()}
-          />
         </Card>
       ) : null}
 

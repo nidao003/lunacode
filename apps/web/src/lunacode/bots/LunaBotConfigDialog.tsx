@@ -30,16 +30,19 @@ import {
   DialogPopup,
   DialogTitle,
 } from "~/components/ui/dialog";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useProjects } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import {
   BOT_ACCENT_OPTIONS,
+  BOT_ACCENT_STYLES,
   BOT_AVATAR_PRESETS,
   LunaBotAvatar,
   extractBotErrorMessage,
 } from "./LunaBotAvatar";
+import { cn } from "~/lib/utils";
 
 const INPUT_CLASS =
   "h-8 w-full rounded-md border border-input bg-background px-2.5 text-xs text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/25";
@@ -47,6 +50,8 @@ const SELECT_CLASS =
   "h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/25";
 const TEXTAREA_CLASS =
   "w-full rounded-md border border-input bg-background p-2.5 text-xs text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/25";
+
+const normalizeWorkflowName = (tag: string): string => tag.replace(/@\d+$/, "");
 
 function BotConfigForm({
   environmentId,
@@ -93,15 +98,21 @@ function BotConfigForm({
   const [workspaceStrategy, setWorkspaceStrategy] = useState<BotWorkspaceStrategy>(
     initialBot?.workspaceStrategy ?? "worktree",
   );
-  const [linkedWorkflows, setLinkedWorkflows] = useState<ReadonlyArray<string>>(
-    initialBot?.linkedWorkflowNames ?? [],
+  const [linkedWorkflows, setLinkedWorkflows] = useState<ReadonlyArray<string>>(() =>
+    Array.from(new Set((initialBot?.linkedWorkflowNames ?? []).map(normalizeWorkflowName))),
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const selectedProvider = providers.find((provider) => provider.instanceId === providerInstanceId);
-  const availableWorkflowNames =
-    definitionsQuery.data?.files.flatMap((file) => file.workflows) ?? [];
+  const availableWorkflowNames = Array.from(
+    new Set([
+      ...linkedWorkflows,
+      ...(definitionsQuery.data?.files.flatMap((file) => file.workflows) ?? []).map(
+        normalizeWorkflowName,
+      ),
+    ]),
+  );
 
   const toggleWorkflow = (wfName: string) => {
     setLinkedWorkflows((current) =>
@@ -154,7 +165,10 @@ function BotConfigForm({
   };
 
   return (
-    <form onSubmit={(event) => void handleSubmit(event)}>
+    <form
+      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      onSubmit={(event) => void handleSubmit(event)}
+    >
       <DialogHeader>
         <div className="flex items-center gap-2.5">
           <LunaBotAvatar avatar={avatar} accent={accent} size="md" />
@@ -175,7 +189,7 @@ function BotConfigForm({
               <input
                 type="text"
                 className={INPUT_CLASS}
-                placeholder="例如: Scout 或 Review buddy"
+                placeholder="例如: 苏探 · Scout 或 林清 · Review"
                 value={name}
                 onChange={(event) => {
                   const nextName = event.target.value;
@@ -202,47 +216,85 @@ function BotConfigForm({
             </label>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <label className="block space-y-1 sm:col-span-1">
+          <div className="space-y-3">
+            <label className="block space-y-1">
               <span className="block text-xs font-medium text-muted-foreground">职责定位</span>
               <input
                 type="text"
                 className={INPUT_CLASS}
-                placeholder="例如: 代码审查"
+                placeholder="例如: Bug 猎手 & 并行主控"
                 value={role}
                 onChange={(event) => setRole(event.target.value)}
               />
             </label>
 
-            <label className="block space-y-1">
-              <span className="block text-xs font-medium text-muted-foreground">图标</span>
-              <select
-                className={SELECT_CLASS}
-                value={avatar}
-                onChange={(event) => setAvatar(event.target.value as BotAvatarPreset)}
-              >
-                {BOT_AVATAR_PRESETS.map((preset) => (
-                  <option key={preset.value} value={preset.value}>
-                    {preset.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="space-y-1.5">
+              <span className="block text-xs font-medium text-muted-foreground">真人风格头像</span>
+              <div className="grid grid-cols-4 gap-2">
+                {BOT_AVATAR_PRESETS.map((preset) => {
+                  const selected = avatar === preset.value;
+                  return (
+                    <Tooltip key={preset.value}>
+                      <TooltipTrigger
+                        render={
+                          <button
+                            type="button"
+                            aria-pressed={selected}
+                            className={cn(
+                              "flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                              selected
+                                ? "border-primary bg-primary/10 text-foreground"
+                                : "border-border bg-card/70 text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                            )}
+                            onClick={() => setAvatar(preset.value)}
+                          >
+                            <LunaBotAvatar avatar={preset.value} accent={accent} size="sm" />
+                            <span className="min-w-0">
+                              <span className="block truncate text-xs font-medium text-foreground">
+                                {preset.personaName}
+                              </span>
+                              <span className="block truncate text-3xs text-muted-foreground">
+                                {preset.styleLabel}
+                              </span>
+                            </span>
+                          </button>
+                        }
+                      />
+                      <TooltipPopup>
+                        {preset.label} · {preset.summary}
+                      </TooltipPopup>
+                    </Tooltip>
+                  );
+                })}
+              </div>
+            </div>
 
-            <label className="block space-y-1">
-              <span className="block text-xs font-medium text-muted-foreground">主题色调</span>
-              <select
-                className={SELECT_CLASS}
-                value={accent}
-                onChange={(event) => setAccent(event.target.value as BotAccent)}
-              >
-                {BOT_ACCENT_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="space-y-1.5">
+              <span className="block text-xs font-medium text-muted-foreground">状态徽章色调</span>
+              <div className="flex flex-wrap gap-1.5">
+                {BOT_ACCENT_OPTIONS.map((opt) => {
+                  const selected = accent === opt.value;
+                  const style = BOT_ACCENT_STYLES[opt.value];
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      aria-pressed={selected}
+                      className={cn(
+                        "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                        selected
+                          ? "border-primary bg-primary/10 font-medium text-foreground"
+                          : "border-border bg-background text-muted-foreground hover:text-foreground",
+                      )}
+                      onClick={() => setAccent(opt.value)}
+                    >
+                      <span aria-hidden className={cn("size-2.5 rounded-full", style.dot)} />
+                      <span>{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -382,6 +434,7 @@ function BotConfigForm({
                     <button
                       key={wfName}
                       type="button"
+                      aria-pressed={selected}
                       className={`cursor-pointer rounded-md border px-2 py-1 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
                         selected
                           ? "border-primary/50 bg-primary/15 text-foreground font-medium"

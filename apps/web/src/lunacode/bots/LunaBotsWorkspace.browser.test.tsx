@@ -41,6 +41,10 @@ vi.mock(import("../../hooks/useNowMinute"), () => ({
   useNowMinute: () => "2026-11-28T03:00:00.000Z",
 }));
 
+vi.mock(import("../../components/workflows/useWorkflowEnvironmentIds"), () => ({
+  useWorkflowEnvironmentIds: () => [ENV_ID],
+}));
+
 vi.mock(import("../../state/query"), (() => ({
   useEnvironmentQuery: (arg: unknown) => {
     const label = (arg as { label?: string } | null)?.label;
@@ -135,6 +139,12 @@ vi.mock(import("../../state/server"), async (original) => {
       upsertBot: { ...actual.serverEnvironment.upsertBot, permissionAtom },
       dispatchBotWorker: { ...actual.serverEnvironment.dispatchBotWorker, permissionAtom },
       sendBotMessage: { ...actual.serverEnvironment.sendBotMessage, permissionAtom },
+      startWorkflowRun: { ...actual.serverEnvironment.startWorkflowRun, permissionAtom },
+      saveWorkflowDefinition: {
+        ...actual.serverEnvironment.saveWorkflowDefinition,
+        permissionAtom,
+      },
+      updateSettings: { ...actual.serverEnvironment.updateSettings, permissionAtom },
     },
   };
 });
@@ -225,6 +235,27 @@ describe("LunaBotsWorkspace", () => {
 
     await userEvent.click(page.getByRole("button", { name: /新建 Bot/ }));
     expect(page.getByText("新建常驻协作 Bot").element()).toBeTruthy();
+    expect(page.getByText("真人风格头像").element()).toBeTruthy();
     await screen.unmount();
+
+    hoisted.search = { tab: "bots" };
+    await using botsTabScreen = await render(
+      <SidebarProvider>
+        <LunaBotsWorkspace />
+      </SidebarProvider>,
+    );
+    expect(page.getByRole("button", { name: /补齐默认团队/ }).element()).toBeTruthy();
+    expect(botsTabScreen.container.querySelector("img")).toBeTruthy();
+    await botsTabScreen.unmount();
+
+    hoisted.search = { tab: "automations" };
+    await using automationsScreen = await render(
+      <SidebarProvider>
+        <LunaBotsWorkspace />
+      </SidebarProvider>,
+    );
+    expect(page.getByText(/精选可视化工作流案例库（共 8 套）/).element()).toBeTruthy();
+    expect(page.getByText("Bug 复现与并行修复").element()).toBeTruthy();
+    await automationsScreen.unmount();
   });
 });

@@ -6,10 +6,11 @@ import {
   type PersistentBot,
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
+import { getBotStarterPrompts } from "@t3tools/shared/lunacodeBotPresets";
 import { useAtomValue } from "@effect/atom-react";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useState } from "react";
-import { View } from "react-native";
+import { ScrollView, View } from "react-native";
 
 import { AppBar } from "../../components/ui/AppBar";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
@@ -23,6 +24,7 @@ import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { LunaMobileBotAvatar } from "./LunaMobileBotAvatar";
 
 export type LunaMobileBotsParams = {
   readonly environmentId?: string;
@@ -198,7 +200,7 @@ function MobileBotsBody({ environmentId }: { readonly environmentId: Environment
         <EmptyState
           variant="plain"
           title="尚未启用常驻 Bot 集群"
-          detail="加载 4 个预设 Bot (Scout / Review buddy / CI Watch / Docs helper) 管理长期记忆对话与并行任务。"
+          detail="加载 6 位拟人化常驻 Bot（苏探 Scout / 林清 Review / 夏哨 CI / 云舒 Docs / 颜汐 Release / 许晨 Standup）管理长期记忆对话与并行任务。"
           actionLabel={seeding ? "初始化中..." : "加载预设集群"}
           onAction={() => void handleSeed()}
         />
@@ -231,13 +233,20 @@ function MobileBotsBody({ environmentId }: { readonly environmentId: Environment
             return (
               <Card key={bot.id} tone={needsCount > 0 ? "input" : undefined}>
                 <View className="flex-row items-center justify-between gap-2">
-                  <View className="flex-1">
-                    <Text textRole="body" className="font-t3-semibold text-foreground">
-                      {bot.name}
-                    </Text>
-                    <Text textRole="caption" className="text-foreground-muted">
-                      @{bot.handle} · {bot.role}
-                    </Text>
+                  <View className="flex-1 flex-row items-center gap-2.5">
+                    <LunaMobileBotAvatar avatar={bot.avatar} accent={bot.accent} size={38} />
+                    <View className="min-w-0 flex-1">
+                      <Text
+                        textRole="body"
+                        className="font-t3-semibold text-foreground"
+                        numberOfLines={1}
+                      >
+                        {bot.name}
+                      </Text>
+                      <Text textRole="caption" className="text-foreground-muted" numberOfLines={1}>
+                        @{bot.handle} · {bot.role}
+                      </Text>
+                    </View>
                   </View>
                   <View className="flex-row gap-1.5">
                     {needsCount > 0 ? <Chip size="small" label={`待拍板 ${needsCount}`} /> : null}
@@ -271,6 +280,19 @@ function MobileBotsBody({ environmentId }: { readonly environmentId: Environment
 
                 {isDispatching ? (
                   <View className="gap-2 border-t border-border pt-2">
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      <View className="flex-row gap-1.5 pb-1">
+                        {getBotStarterPrompts(bot).map((starter) => (
+                          <Chip
+                            key={starter.label}
+                            size="small"
+                            label={starter.label}
+                            selected={dispatchPrompt === starter.prompt}
+                            onPress={() => setDispatchPrompt(starter.prompt)}
+                          />
+                        ))}
+                      </View>
+                    </ScrollView>
                     <TextInput
                       multiline
                       value={dispatchPrompt}

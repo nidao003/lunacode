@@ -128,7 +128,7 @@ function makeTestHarness() {
 }
 
 it.effect(
-  "seeds presets idempotently, ensures zero-token Home Chat, dispatches workers, and answers tasks",
+  "auto-seeds 6 presets, supports idempotent re-seed, ensures zero-token Home Chat, injects role once, dispatches workers, and answers tasks",
   () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -140,10 +140,19 @@ it.effect(
       yield* Effect.gen(function* () {
         const bots = yield* BotClusterService;
 
+        // Fresh cluster auto-seeds 6 curated realistic-persona Bots on boot.
+        const initialSnap = yield* bots.snapshot();
+        expect(initialSnap.bots).toHaveLength(6);
+        expect(initialSnap.bots[0]?.name).toContain("苏探");
+
+        // seedPresets is idempotent when all 6 presets exist.
         const seeded1 = yield* bots.seedPresets({ projectId: harness.projectId });
-        expect(seeded1.createdCount).toBe(4);
-        const seeded2 = yield* bots.seedPresets({ projectId: harness.projectId });
-        expect(seeded2.createdCount).toBe(0);
+        expect(seeded1.createdCount).toBe(0);
+
+        // Removing a default bot lets seedPresets restore the missing team member.
+        yield* bots.deleteBot({ botId: BotId.make("bot-standup") });
+        const restored = yield* bots.seedPresets({ projectId: harness.projectId });
+        expect(restored.createdCount).toBe(1);
 
         // Opening Home Chat creates thread WITHOUT sending any initialMessage (zero tokens spent).
         const scoutId = BotId.make("bot-scout");
@@ -157,6 +166,14 @@ it.effect(
         expect(home2.threadId).toBe(home1.threadId);
         expect(harness.launchedCalls).toHaveLength(1);
 
+        // On another bot with no Home Chat yet, first sendMessage injects [Bot 角色档案 ...] once only.
+        const docsId = BotId.make("bot-docs-helper");
+        yield* bots.sendMessage({ botId: docsId, message: "检查文档漂移" });
+        expect(harness.sentCalls.at(-1)?.text).toContain("[Bot 角色档案");
+        expect(harness.sentCalls.at(-1)?.text).toContain("检查文档漂移");
+        yield* bots.sendMessage({ botId: docsId, message: "继续第二条对话" });
+        expect(harness.sentCalls.at(-1)?.text).toBe("继续第二条对话");
+
         // Dispatching a worker launches a thread and creates Task #1.
         const dispatched = yield* bots.dispatchWorker({
           botId: scoutId,
@@ -166,7 +183,7 @@ it.effect(
         expect(dispatched.task.number).toBe(1);
         expect(dispatched.task.status).toBe("in_progress");
         expect(dispatched.task.workerThreadIds).toEqual([dispatched.threadId]);
-        expect(harness.launchedCalls[1]?.initialMessage?.text).toContain("Scout (@scout)");
+        expect(harness.launchedCalls[2]?.initialMessage?.text).toContain("@scout");
 
         // Asking a question flips status to needs_you, and answering clears it + notifies Home Chat.
         const asked = yield* bots.upsertTask({
@@ -192,7 +209,7 @@ it.effect(
 
         // Stream emits initial snapshot.
         const firstBatch = yield* bots.subscribe().pipe(Stream.take(1), Stream.runCollect);
-        expect(firstBatch[0]?.bots).toHaveLength(4);
+        expect(firstBatch[0]?.bots).toHaveLength(6);
       }).pipe(Effect.provide(serviceLayer));
 
       // Reload against the same tempDir and verify persistence survived cleanly.
@@ -208,19 +225,114 @@ it.effect(
       yield* Effect.gen(function* () {
         const bots = yield* BotClusterService;
         const snap = yield* bots.snapshot();
-        expect(snap.bots).toHaveLength(4);
+        expect(snap.bots).toHaveLength(6);
         expect(snap.tasks).toHaveLength(1);
         expect(snap.tasks[0]?.title).toBe("Investigate Safari tap bug");
 
         // Custom upsert & delete checks.
         const custom = yield* bots.upsertBot({
-          name: "Release Manager",
-          handle: BotHandle.make("release-mgr"),
-          role: "Publish notes",
+          name: "Custom Auditor",
+          handle: BotHandle.make("custom-auditor"),
+          role: "Security audit",
         });
-        expect(custom.handle).toBe("release-mgr");
+        expect(custom.handle).toBe("custom-auditor");
         const removed = yield* bots.deleteBot({ botId: custom.id });
         expect(removed.deleted).toBe(true);
       }).pipe(Effect.provide(harness2.makeLayer(tempDir)));
+    }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "migrates legacy v1 untouched preset bots to v2 while preserving customized bots and empty lists",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "lunacode-bots-mig-" });
+      const botsDir = path.join(tempDir, "userdata", "lunacode-bots");
+      yield* fs.makeDirectory(botsDir, { recursive: true });
+      yield* fs.writeFileString(
+        path.join(botsDir, "bots.json"),
+        JSON.stringify(
+          {
+            version: 1,
+            bots: [
+              {
+                id: "bot-scout",
+                name: "Scout",
+                handle: "scout",
+                role: "Old role",
+                avatar: "scout",
+                accent: "info",
+                systemPrompt: "你是团队主控 Bot Scout。旧版职责",
+                defaultProjectId: null,
+                providerInstanceId: null,
+                model: null,
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                workspaceStrategy: "root",
+                homeThreadId: null,
+                linkedWorkflowNames: [],
+                linkedScheduledTaskIds: [],
+                createdAt: "2026-11-28T00:00:00.000Z",
+                updatedAt: "2026-11-28T00:00:00.000Z",
+              },
+              {
+                id: "bot-review-buddy",
+                name: "我的专属评审官",
+                handle: "review-buddy",
+                role: "Custom Review",
+                avatar: "reviewer",
+                accent: "success",
+                systemPrompt: "用户的自定义评审规范，不要覆盖",
+                defaultProjectId: null,
+                providerInstanceId: null,
+                model: null,
+                runtimeMode: "approval-required",
+                interactionMode: "plan",
+                workspaceStrategy: "root",
+                homeThreadId: null,
+                linkedWorkflowNames: ["my-custom-flow"],
+                linkedScheduledTaskIds: [],
+                createdAt: "2026-11-28T00:00:00.000Z",
+                updatedAt: "2026-11-28T00:00:00.000Z",
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      );
+
+      const harness = makeTestHarness();
+      yield* Effect.gen(function* () {
+        const bots = yield* BotClusterService;
+        const snap = yield* bots.snapshot();
+        expect(snap.bots).toHaveLength(6);
+        const scout = snap.bots.find((b) => b.id === "bot-scout")!;
+        expect(scout.name).toBe("苏探 · Scout");
+        expect(scout.workspaceStrategy).toBe("worktree");
+        expect(scout.linkedWorkflowNames).toContain("bug-repro-fix");
+
+        const customReview = snap.bots.find((b) => b.id === "bot-review-buddy")!;
+        expect(customReview.name).toBe("我的专属评审官");
+        expect(customReview.systemPrompt).toBe("用户的自定义评审规范，不要覆盖");
+        expect(customReview.linkedWorkflowNames).toEqual(["my-custom-flow"]);
+      }).pipe(Effect.provide(harness.makeLayer(tempDir)));
+
+      // Intentionally empty v1 list must remain empty on migration.
+      const emptyDir = yield* fs.makeTempDirectoryScoped({ prefix: "lunacode-bots-empty-" });
+      const emptyBotsDir = path.join(emptyDir, "userdata", "lunacode-bots");
+      yield* fs.makeDirectory(emptyBotsDir, { recursive: true });
+      yield* fs.writeFileString(
+        path.join(emptyBotsDir, "bots.json"),
+        JSON.stringify({ version: 1, bots: [] }),
+      );
+      const emptyHarness = makeTestHarness();
+      yield* Effect.gen(function* () {
+        const bots = yield* BotClusterService;
+        const snap = yield* bots.snapshot();
+        expect(snap.bots).toHaveLength(0);
+      }).pipe(Effect.provide(emptyHarness.makeLayer(emptyDir)));
     }).pipe(Effect.provide(NodeServices.layer)),
 );

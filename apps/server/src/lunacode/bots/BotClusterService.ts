@@ -32,6 +32,11 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import {
+  LEGACY_V1_BOT_SIGNATURES,
+  LUNA_DEFAULT_BOT_PRESETS,
+  LUNA_PRESET_VERSION,
+} from "@t3tools/shared/lunacodeBotPresets";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -62,6 +67,7 @@ const TASKS_FILE_NAME = "tasks.json";
 
 const PersistedBotsFile = Schema.Struct({
   version: Schema.Literal(1),
+  presetVersion: Schema.optional(Schema.Int),
   bots: Schema.Array(PersistentBot),
 });
 type PersistedBotsFile = typeof PersistedBotsFile.Type;
@@ -88,73 +94,76 @@ interface ClusterStoreState {
   readonly updatedAt: string;
 }
 
-const PRESET_BOTS: ReadonlyArray<
-  Omit<
-    PersistentBot,
-    "defaultProjectId" | "providerInstanceId" | "model" | "homeThreadId" | "createdAt" | "updatedAt"
-  >
-> = [
-  {
-    id: BotId.make("bot-scout"),
-    name: "Scout",
-    handle: BotHandle.make("scout"),
-    role: "Bug 猎手 & 功能并行主控",
-    avatar: "scout",
-    accent: "info",
-    systemPrompt:
-      "你是团队主控 Bot Scout。收到需求后先拆解边界：复杂实现与复现测试拆给隔离 Worktree Worker，并在完成后同步 Task 状态或汇报关键风险。",
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    workspaceStrategy: "worktree",
-    linkedWorkflowNames: [],
-    linkedScheduledTaskIds: [],
-  },
-  {
-    id: BotId.make("bot-review-buddy"),
-    name: "Review Buddy",
-    handle: BotHandle.make("review-buddy"),
-    role: "代码评审 & 回归守门",
-    avatar: "reviewer",
-    accent: "success",
-    systemPrompt:
-      "你是严谨的代码评审 Bot Review Buddy。重点核查回归风险、类型安全、边界条件及测试覆盖率，有问题直接标出文件与行号。",
-    runtimeMode: "approval-required",
-    interactionMode: "plan",
-    workspaceStrategy: "root",
-    linkedWorkflowNames: [],
-    linkedScheduledTaskIds: [],
-  },
-  {
-    id: BotId.make("bot-ci-watch"),
-    name: "CI Watch",
-    handle: BotHandle.make("ci-watch"),
-    role: "构建 / 失败定位监控",
-    avatar: "sentinel",
-    accent: "warning",
-    systemPrompt:
-      "你是稳定性监控 Bot CI Watch。定位测试、Lint 或构建失败的根本原因，并向对应负责人总结最小修复步骤。",
-    runtimeMode: "approval-required",
-    interactionMode: "default",
-    workspaceStrategy: "root",
-    linkedWorkflowNames: [],
-    linkedScheduledTaskIds: [],
-  },
-  {
-    id: BotId.make("bot-docs-helper"),
-    name: "Docs Helper",
-    handle: BotHandle.make("docs-helper"),
-    role: "文档、变更总结 & PR 说明",
-    avatar: "scribe",
-    accent: "primary",
-    systemPrompt:
-      "你是文档与交付说明 Bot Docs Helper。负责把代码改动整理为清晰准确的中文变更摘要、操作文档与发布说明。",
-    runtimeMode: "approval-required",
-    interactionMode: "default",
-    workspaceStrategy: "root",
-    linkedWorkflowNames: [],
-    linkedScheduledTaskIds: [],
-  },
-];
+function buildPresetBotEntries(opts: {
+  readonly now: string;
+  readonly projectId: ProjectId | null;
+}): Array<PersistentBot> {
+  return LUNA_DEFAULT_BOT_PRESETS.map((preset) => ({
+    ...preset,
+    defaultProjectId: opts.projectId,
+    providerInstanceId: null,
+    model: null,
+    homeThreadId: null,
+    createdAt: opts.now,
+    updatedAt: opts.now,
+  }));
+}
+
+function upgradeLegacyBotsToCurrentPresets(opts: {
+  readonly existingBots: ReadonlyArray<PersistentBot>;
+  readonly now: string;
+  readonly projectId: ProjectId | null;
+}): ReadonlyArray<PersistentBot> {
+  if (opts.existingBots.length === 0) {
+    return [];
+  }
+  const presetsById = new Map(LUNA_DEFAULT_BOT_PRESETS.map((p) => [p.id, p] as const));
+  const upgraded = opts.existingBots.map((bot) => {
+    const preset = presetsById.get(bot.id);
+    const sig = LEGACY_V1_BOT_SIGNATURES[bot.id];
+    if (!preset || !sig) return bot;
+
+    const nameIsLegacy = sig.legacyNames.includes(bot.name);
+    const promptIsLegacy =
+      bot.systemPrompt.trim() === "" || bot.systemPrompt.startsWith(sig.legacyPromptPrefix);
+    const nextLinkedWorkflows = dedupeStrings([
+      ...bot.linkedWorkflowNames,
+      ...(bot.linkedWorkflowNames.length === 0 ? preset.linkedWorkflowNames : []),
+    ]);
+
+    return {
+      ...bot,
+      ...(nameIsLegacy ? { name: preset.name } : {}),
+      ...(promptIsLegacy
+        ? {
+            role: preset.role,
+            systemPrompt: preset.systemPrompt,
+            workspaceStrategy: preset.workspaceStrategy,
+          }
+        : {}),
+      linkedWorkflowNames: nextLinkedWorkflows,
+      updatedAt: opts.now,
+    };
+  });
+
+  const seenIds = new Set(upgraded.map((b) => b.id));
+  const seenHandles = new Set(upgraded.map((b) => b.handle.toLowerCase()));
+  const additions: Array<PersistentBot> = [];
+  for (const preset of LUNA_DEFAULT_BOT_PRESETS) {
+    if (seenIds.has(preset.id) || seenHandles.has(preset.handle.toLowerCase())) continue;
+    additions.push({
+      ...preset,
+      defaultProjectId: opts.projectId,
+      providerInstanceId: null,
+      model: null,
+      homeThreadId: null,
+      createdAt: opts.now,
+      updatedAt: opts.now,
+    });
+  }
+
+  return [...upgraded, ...additions];
+}
 
 function dedupeStrings<T extends string>(items: ReadonlyArray<T>): Array<T> {
   return [...new Set(items)];
@@ -249,13 +258,21 @@ export class BotClusterService extends Context.Service<
       const readStoredBots = fs.readFileString(botsFilePath).pipe(
         Effect.flatMap((raw) => {
           const decoded = decodeBotsFileExit(raw);
-          if (decoded._tag === "Success") return Effect.succeed(decoded.value.bots);
+          if (decoded._tag === "Success") {
+            return Effect.succeed({
+              bots: decoded.value.bots,
+              presetVersion: decoded.value.presetVersion ?? 1,
+            });
+          }
           return Effect.logWarning("Ignoring invalid lunacode bots.json", {
             path: botsFilePath,
             cause: Cause.pretty(decoded.cause),
-          }).pipe(Effect.as<ReadonlyArray<PersistentBot>>([]));
+          }).pipe(Effect.as({ bots: [] as ReadonlyArray<PersistentBot>, presetVersion: 1 }));
         }),
-        Effect.orElseSucceed((): ReadonlyArray<PersistentBot> => []),
+        Effect.orElseSucceed(() => ({
+          bots: [] as ReadonlyArray<PersistentBot>,
+          presetVersion: 1,
+        })),
       );
 
       const readStoredTasks = fs.readFileString(tasksFilePath).pipe(
@@ -275,9 +292,49 @@ export class BotClusterService extends Context.Service<
         Effect.orElseSucceed(() => ({ nextNumber: 1, tasks: [] as ReadonlyArray<BotTask> })),
       );
 
-      const initialBots = yield* readStoredBots;
-      const initialTasksData = yield* readStoredTasks;
       const initialTimestamp = yield* nowIso;
+      const botsFileExists = yield* fs.exists(botsFilePath).pipe(Effect.orElseSucceed(() => false));
+      const initialTasksData = yield* readStoredTasks;
+
+      let initialBots: ReadonlyArray<PersistentBot> = [];
+      let shouldWriteInitialBots = false;
+      if (!botsFileExists) {
+        const defaultProjectId = yield* projectService.snapshot.pipe(
+          Effect.map((snap) => snap.projects[0]?.id ?? null),
+          Effect.orElseSucceed(() => null),
+        );
+        initialBots = buildPresetBotEntries({
+          now: initialTimestamp,
+          projectId: defaultProjectId,
+        });
+        shouldWriteInitialBots = initialBots.length > 0;
+      } else {
+        const storedBots = yield* readStoredBots;
+        initialBots = storedBots.bots;
+        if (storedBots.presetVersion < LUNA_PRESET_VERSION) {
+          const defaultProjectId = yield* projectService.snapshot.pipe(
+            Effect.map((snap) => snap.projects[0]?.id ?? null),
+            Effect.orElseSucceed(() => null),
+          );
+          initialBots = upgradeLegacyBotsToCurrentPresets({
+            existingBots: storedBots.bots,
+            now: initialTimestamp,
+            projectId: defaultProjectId,
+          });
+          shouldWriteInitialBots = true;
+        }
+      }
+
+      if (shouldWriteInitialBots) {
+        yield* writeFileAtomic(
+          botsFilePath,
+          encodeBotsFileJson({
+            version: 1,
+            presetVersion: LUNA_PRESET_VERSION,
+            bots: initialBots,
+          }),
+        ).pipe(Effect.ignoreCause({ log: true }));
+      }
 
       const stateRef = yield* Ref.make<ClusterStoreState>({
         bots: initialBots,
@@ -291,7 +348,14 @@ export class BotClusterService extends Context.Service<
         opts: { readonly writeBots?: boolean; readonly writeTasks?: boolean },
       ) {
         if (opts.writeBots) {
-          yield* writeFileAtomic(botsFilePath, encodeBotsFileJson({ version: 1, bots: next.bots }));
+          yield* writeFileAtomic(
+            botsFilePath,
+            encodeBotsFileJson({
+              version: 1,
+              presetVersion: LUNA_PRESET_VERSION,
+              bots: next.bots,
+            }),
+          );
         }
         if (opts.writeTasks) {
           yield* writeFileAtomic(
@@ -394,7 +458,10 @@ export class BotClusterService extends Context.Service<
         function* (
           botId: BotId,
           preferredProjectId?: ProjectId,
-        ): Effect.fn.Return<BotEnsureHomeThreadResult, BotClusterRequestError> {
+        ): Effect.fn.Return<
+          BotEnsureHomeThreadResult & { readonly created: boolean },
+          BotClusterRequestError
+        > {
           const current = yield* Ref.get(stateRef);
           const existingBot = current.bots.find((b) => b.id === botId);
           if (!existingBot) {
@@ -405,7 +472,7 @@ export class BotClusterService extends Context.Service<
               .getThreadShell(existingBot.homeThreadId)
               .pipe(Effect.orElseSucceed(() => null));
             if (shell !== null && shell.deletedAt === null) {
-              return { bot: existingBot, threadId: existingBot.homeThreadId };
+              return { bot: existingBot, threadId: existingBot.homeThreadId, created: false };
             }
           }
 
@@ -446,7 +513,7 @@ export class BotClusterService extends Context.Service<
           yield* persistAndPublish(nextState, { writeBots: true }).pipe(
             Effect.mapError((cause) => formatBotError(cause, "保存 Bot 状态失败。")),
           );
-          return { bot: updatedBot, threadId: launched.threadId };
+          return { bot: updatedBot, threadId: launched.threadId, created: true };
         },
       );
 
@@ -554,7 +621,11 @@ export class BotClusterService extends Context.Service<
       const ensureHomeThread = (
         input: BotEnsureHomeThreadInput,
       ): Effect.Effect<BotEnsureHomeThreadResult, BotClusterRequestError> =>
-        writeSemaphore.withPermits(1)(ensureHomeThreadUnlocked(input.botId, input.projectId));
+        writeSemaphore.withPermits(1)(
+          ensureHomeThreadUnlocked(input.botId, input.projectId).pipe(
+            Effect.map(({ bot, threadId }) => ({ bot, threadId })),
+          ),
+        );
 
       const dispatchWorker = (
         input: BotDispatchWorkerInput,
@@ -692,10 +763,19 @@ export class BotClusterService extends Context.Service<
       ): Effect.Effect<BotSendMessageResult, BotClusterRequestError> =>
         writeSemaphore.withPermits(1)(
           Effect.gen(function* () {
-            const { bot, threadId } = yield* ensureHomeThreadUnlocked(input.botId, input.projectId);
+            const { bot, threadId, created } = yield* ensureHomeThreadUnlocked(
+              input.botId,
+              input.projectId,
+            );
             const projectId = yield* resolveTargetProjectId(
               input.projectId ?? bot.defaultProjectId,
             );
+            const roleText = bot.systemPrompt.trim();
+            // Inject role charter only on the very first turn when creating a fresh Home Chat, preserving Prefix Cache later.
+            const outboundText =
+              created && roleText.length > 0
+                ? `[Bot 角色档案 · ${bot.name} (@${bot.handle}) · ${bot.role}]\n${roleText}\n\n${input.message}`
+                : input.message;
             const cmdUuid = yield* nextUuid();
             const msgUuid = yield* nextUuid();
             yield* threadManagement
@@ -704,7 +784,7 @@ export class BotClusterService extends Context.Service<
                 commandId: CommandId.make(`bot-send:${bot.id}:${cmdUuid}`),
                 threadId,
                 messageId: MessageId.make(msgUuid),
-                text: input.message,
+                text: outboundText,
                 attachments: [],
                 mode: "auto",
                 createdBy: "user",
@@ -757,13 +837,19 @@ export class BotClusterService extends Context.Service<
             const existingIds = new Set(current.bots.map((b) => b.id));
             const updatedAt = yield* nowIso;
             const added: Array<PersistentBot> = [];
-            for (const preset of PRESET_BOTS) {
+            const fallbackProjectId =
+              input.projectId ??
+              (yield* projectService.snapshot.pipe(
+                Effect.map((snap) => snap.projects[0]?.id ?? null),
+                Effect.orElseSucceed(() => null),
+              ));
+            for (const preset of LUNA_DEFAULT_BOT_PRESETS) {
               if (existingIds.has(preset.id) || existingHandles.has(preset.handle.toLowerCase())) {
                 continue;
               }
               added.push({
                 ...preset,
-                defaultProjectId: input.projectId ?? null,
+                defaultProjectId: fallbackProjectId,
                 providerInstanceId: null,
                 model: null,
                 homeThreadId: null,

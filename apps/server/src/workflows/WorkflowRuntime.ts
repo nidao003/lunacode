@@ -31,6 +31,8 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as ServerConfig from "../config.ts";
+import { seedDefaultFlowsIfNeeded } from "../lunacode/workflows/defaultFlowSeeding.ts";
+import * as ProjectService from "../project/ProjectService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { engineTag, text, type WorkflowDefinition } from "./workflow.ts";
 import { isFlowDefinitionFile, loadFlowDefinitionFromJson } from "./flow/FlowLoader.ts";
@@ -1000,6 +1002,24 @@ export const layer = Layer.effectContext(
       ),
       where,
     );
+    if (Option.isNone(override)) {
+      const projectSvc = yield* Effect.serviceOption(ProjectService.ProjectService);
+      const firstProjectId =
+        projectSvc._tag === "Some"
+          ? yield* projectSvc.value.snapshot.pipe(
+              Effect.map((snap) => snap.projects[0]?.id ?? null),
+              Effect.orElseSucceed(() => null),
+            )
+          : null;
+      yield* seedDefaultFlowsIfNeeded({
+        directory: where,
+        projectId: firstProjectId,
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Seeding default Lunacode workflows failed", Cause.pretty(cause)),
+        ),
+      );
+    }
     const enabled = yield* settings.getSettings.pipe(
       Effect.map((current) => current.workflowsEnabled),
       Effect.orElseSucceed(() => false),

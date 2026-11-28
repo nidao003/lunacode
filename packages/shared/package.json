@@ -690,6 +690,14 @@
     "./assistantInsights": {
       "types": "./src/assistantInsights.ts",
       "import": "./src/assistantInsights.ts"
+    },
+    "./lunacodeBotPresets": {
+      "types": "./src/lunacodeBotPresets.ts",
+      "import": "./src/lunacodeBotPresets.ts"
+    },
+    "./lunacodeFlowPresets": {
+      "types": "./src/lunacodeFlowPresets.ts",
+      "import": "./src/lunacodeFlowPresets.ts"
     }
   },
   "scripts": {

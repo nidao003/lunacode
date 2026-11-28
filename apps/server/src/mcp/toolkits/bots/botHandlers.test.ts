@@ -145,6 +145,14 @@ describe("Bot MCP toolkit", () => {
         expect(listed.isFailure).toBe(false);
         expect(listed.result.bots[0]?.handle).toBe("scout");
 
+        const byPersonaName = yield* call("t3_bots_list", { bot: "苏探" });
+        expect(byPersonaName.isFailure).toBe(false);
+        expect(byPersonaName.result.bots[0]?.handle).toBe("scout");
+
+        const bySpaceAlias = yield* call("t3_bots_list", { bot: "review buddy" });
+        expect(bySpaceAlias.isFailure).toBe(false);
+        expect(bySpaceAlias.result.bots[0]?.handle).toBe("review-buddy");
+
         const upserted = yield* call("t3_bot_task_upsert", {
           bot: "@scout",
           title: "Fix Safari click",

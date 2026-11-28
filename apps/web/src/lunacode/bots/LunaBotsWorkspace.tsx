@@ -5,6 +5,13 @@ import {
   isBotThreadWorking,
   sortBotTasks,
 } from "@t3tools/client-runtime/lunacode/bots";
+import {
+  DEFAULT_SEED_FLOW_TEMPLATES,
+  FLOW_TEMPLATES,
+  type FlowStarterTemplateMeta,
+  createStarterFlowSpec,
+  formatFlowSpecJson,
+} from "@t3tools/client-runtime/lunacode/workflow-flow";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
@@ -21,20 +28,25 @@ import {
   EnvironmentId,
   type PersistentBot,
   type ProjectId,
+  type ServerProvider,
   type ThreadId,
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
+import { LUNA_DEFAULT_BOT_PRESETS } from "@t3tools/shared/lunacodeBotPresets";
 import { useAtomValue } from "@effect/atom-react";
+import { Atom } from "effect/reactivity";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   AlertCircleIcon,
   BotIcon,
   CheckSquareIcon,
+  FolderPlusIcon,
   LayersIcon,
   MessageSquareIcon,
   PencilIcon,
   PlayIcon,
   PlusIcon,
+  PowerIcon,
   SearchIcon,
   Trash2Icon,
   WorkflowIcon,
@@ -46,6 +58,7 @@ import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { SidebarInset } from "~/components/ui/sidebar";
+import { useWorkflowEnvironmentIds } from "~/components/workflows/useWorkflowEnvironmentIds";
 import { isElectron } from "~/env";
 import { useNowMinute } from "~/hooks/useNowMinute";
 import { cn } from "~/lib/utils";
@@ -59,6 +72,8 @@ import { BOT_TASK_STATUS_META, LunaBotAvatar, extractBotErrorMessage } from "./L
 import { LunaBotConfigDialog } from "./LunaBotConfigDialog";
 import { LunaBotDispatchDialog } from "./LunaBotDispatchDialog";
 import { LunaBotTaskDetailPanel } from "./LunaBotTaskDetailPanel";
+
+const EMPTY_PROVIDERS_ATOM = Atom.make<ReadonlyArray<ServerProvider> | null>(null);
 
 export type BotsHubTab = "tasks" | "bots" | "automations";
 
@@ -175,9 +190,20 @@ export function LunaBotsWorkspace() {
   const botsQuery = useEnvironmentQuery(
     environmentId ? serverEnvironment.botsLive({ environmentId, input: {} }) : null,
   );
+  const workflowEnvIds = useWorkflowEnvironmentIds();
+  const workflowsEnabled = Boolean(environmentId && workflowEnvIds.includes(environmentId));
+  const workflowDefsQuery = useEnvironmentQuery(
+    workflowsEnabled && environmentId
+      ? serverEnvironment.workflowDefinition({ environmentId, input: {} })
+      : null,
+  );
   const snapshot = botsQuery.data;
   const allThreads = useQuietThreadShells();
   const allProjects = useProjects();
+  const providers =
+    useAtomValue(
+      environmentId ? serverEnvironment.providersValueAtom(environmentId) : EMPTY_PROVIDERS_ATOM,
+    ) ?? [];
   const nowMinuteIso = useNowMinute();
   const parsedNow = Date.parse(nowMinuteIso);
   const nowMs = Number.isNaN(parsedNow) ? 0 : parsedNow;
@@ -190,6 +216,15 @@ export function LunaBotsWorkspace() {
     serverEnvironment.ensureBotHomeThread.permissionAtom(environmentId),
   );
   const canDeleteBot = useAtomValue(serverEnvironment.deleteBot.permissionAtom(environmentId));
+  const canUpdateSettings = useAtomValue(
+    serverEnvironment.updateSettings.permissionAtom(environmentId),
+  );
+  const canSaveWorkflow = useAtomValue(
+    serverEnvironment.saveWorkflowDefinition.permissionAtom(environmentId),
+  );
+  const canStartWorkflow = useAtomValue(
+    serverEnvironment.startWorkflowRun.permissionAtom(environmentId),
+  );
 
   const seedPresets = useAtomCommand(serverEnvironment.seedBotPresets, {
     label: "hub seed bot presets",
@@ -201,6 +236,18 @@ export function LunaBotsWorkspace() {
   });
   const deleteBot = useAtomCommand(serverEnvironment.deleteBot, {
     label: "hub delete bot",
+    reportFailure: false,
+  });
+  const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
+    label: "hub enable workflows",
+    reportFailure: false,
+  });
+  const saveWorkflow = useAtomCommand(serverEnvironment.saveWorkflowDefinition, {
+    label: "hub save workflow template",
+    reportFailure: false,
+  });
+  const startWorkflow = useAtomCommand(serverEnvironment.startWorkflowRun, {
+    label: "hub start workflow",
     reportFailure: false,
   });
 
@@ -218,6 +265,10 @@ export function LunaBotsWorkspace() {
     readonly taskId: BotTaskId | null;
   }>({ open: false, botId: null, taskId: null });
   const [actionError, setActionError] = useState<string | null>(null);
+  const [enablingWorkflows, setEnablingWorkflows] = useState(false);
+  const [seedingFlows, setSeedingFlows] = useState(false);
+  const [creatingFlowId, setCreatingFlowId] = useState<string | null>(null);
+  const [startingWorkflowName, setStartingWorkflowName] = useState<string | null>(null);
 
   const threadsById = new Map<ThreadId, EnvironmentThreadShell>();
   const projectsById = new Map<ProjectId, EnvironmentProject>();
@@ -236,6 +287,21 @@ export function LunaBotsWorkspace() {
 
   const bots = snapshot?.bots.filter((bot) => bot.archived !== true) ?? [];
   const botsById = new Map(bots.map((bot) => [bot.id, bot]));
+  const missingPresetCount = LUNA_DEFAULT_BOT_PRESETS.filter(
+    (preset) =>
+      !bots.some(
+        (bot) => bot.id === preset.id || bot.handle.toLowerCase() === preset.handle.toLowerCase(),
+      ),
+  ).length;
+  const existingFlowFiles = new Set(
+    (workflowDefsQuery.data?.files ?? []).map((f) => f.name.toLowerCase()),
+  );
+  const missingDefaultFlows = DEFAULT_SEED_FLOW_TEMPLATES.filter(
+    (item) => !existingFlowFiles.has(item.defaultFileName.toLowerCase()),
+  );
+  const envProjects = environmentId
+    ? allProjects.filter((p) => p.environmentId === environmentId)
+    : [];
   const sortedTasks = snapshot ? sortBotTasks(snapshot.tasks) : [];
 
   const normalizedQuery = queryText.trim().toLowerCase();
@@ -324,6 +390,103 @@ export function LunaBotsWorkspace() {
     setActionError(null);
     const result = await deleteBot({ environmentId, input: { botId: bot.id } });
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      setActionError(extractBotErrorMessage(squashAtomCommandFailure(result)));
+    }
+  };
+
+  const resolveTemplateCreationOpts = () => {
+    const defaultProvider = providers.find((p) => p.enabled && p.models.length > 0);
+    const defaultModel =
+      defaultProvider?.models.find((m) => m.isDefault) ?? defaultProvider?.models[0];
+    return {
+      ...(envProjects[0]?.id ? { project: envProjects[0].id } : {}),
+      ...(defaultProvider?.instanceId ? { providerInstanceId: defaultProvider.instanceId } : {}),
+      ...(defaultModel?.slug ? { model: defaultModel.slug } : {}),
+    };
+  };
+
+  const handleEnableWorkflows = async () => {
+    if (!environmentId || !canUpdateSettings || enablingWorkflows) return;
+    setEnablingWorkflows(true);
+    setActionError(null);
+    const result = await updateSettings({
+      environmentId,
+      input: { patch: { workflowsEnabled: true } },
+    });
+    setEnablingWorkflows(false);
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      setActionError(extractBotErrorMessage(squashAtomCommandFailure(result)));
+    }
+  };
+
+  const handleSeedDefaultFlows = async () => {
+    if (!environmentId || !canSaveWorkflow || seedingFlows || missingDefaultFlows.length === 0) {
+      return;
+    }
+    setSeedingFlows(true);
+    setActionError(null);
+    const opts = resolveTemplateCreationOpts();
+    for (const item of missingDefaultFlows) {
+      const spec = createStarterFlowSpec({
+        name: item.defaultFileName.replace(/\.flow\.json$/i, ""),
+        template: item.id,
+        ...opts,
+      });
+      const result = await saveWorkflow({
+        environmentId,
+        input: { name: item.defaultFileName, source: formatFlowSpecJson(spec) },
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        setActionError(extractBotErrorMessage(squashAtomCommandFailure(result)));
+        break;
+      }
+    }
+    setSeedingFlows(false);
+  };
+
+  const handleCreateTemplateFlow = async (item: FlowStarterTemplateMeta) => {
+    if (!environmentId || !canSaveWorkflow || creatingFlowId !== null) return;
+    setCreatingFlowId(item.id);
+    setActionError(null);
+    const spec = createStarterFlowSpec({
+      name: item.defaultFileName.replace(/\.flow\.json$/i, ""),
+      template: item.id,
+      ...resolveTemplateCreationOpts(),
+    });
+    const result = await saveWorkflow({
+      environmentId,
+      input: { name: item.defaultFileName, source: formatFlowSpecJson(spec) },
+    });
+    setCreatingFlowId(null);
+    if (result._tag === "Success") {
+      void navigate({
+        to: "/workflows",
+        search: { env: environmentId, definitions: true, file: item.defaultFileName },
+      });
+      return;
+    }
+    if (!isAtomCommandInterrupted(result)) {
+      setActionError(extractBotErrorMessage(squashAtomCommandFailure(result)));
+    }
+  };
+
+  const handleStartWorkflow = async (workflowName: string) => {
+    if (!environmentId || !canStartWorkflow || startingWorkflowName !== null) return;
+    setStartingWorkflowName(workflowName);
+    setActionError(null);
+    const result = await startWorkflow({
+      environmentId,
+      input: { workflow: workflowName },
+    });
+    setStartingWorkflowName(null);
+    if (result._tag === "Success") {
+      void navigate({
+        to: "/workflows",
+        search: { env: environmentId, run: result.value.runId },
+      });
+      return;
+    }
+    if (!isAtomCommandInterrupted(result)) {
       setActionError(extractBotErrorMessage(squashAtomCommandFailure(result)));
     }
   };
@@ -467,7 +630,7 @@ export function LunaBotsWorkspace() {
             <div className="flex flex-wrap justify-center gap-2 pt-2">
               <Button disabled={!canSeed} onClick={() => void handleSeed()}>
                 <PlayIcon />
-                加载预设 4 个常驻 Bot
+                一键加载 6 位常驻 Bot
               </Button>
               <Button
                 variant="outline"
@@ -677,6 +840,22 @@ export function LunaBotsWorkspace() {
         </div>
       ) : activeTab === "bots" ? (
         <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+          {missingPresetCount > 0 ? (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-border bg-card/60 px-4 py-2.5 text-xs">
+              <span className="text-muted-foreground">
+                默认协作团队还有 {missingPresetCount} 位推荐成员未加入当前集群。
+              </span>
+              <Button
+                size="compact"
+                variant="outline"
+                disabled={!canSeed}
+                onClick={() => void handleSeed()}
+              >
+                <FolderPlusIcon />
+                补齐默认团队 (+{missingPresetCount})
+              </Button>
+            </div>
+          ) : null}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {bots.map((bot) => {
               const botTasks = sortedTasks.filter((task) => task.botId === bot.id);
@@ -785,24 +964,57 @@ export function LunaBotsWorkspace() {
         </div>
       ) : (
         <div className="scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
-          <div className="mx-auto max-w-3xl space-y-4">
-            <div className="rounded-xl border border-border bg-card p-5 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-semibold text-foreground">
-                    可视化工作流与定时任务联动
-                  </h2>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    每个常驻 Bot 可绑定多个 LUNA-020 `.flow.json`
-                    工作流与定时触发器，实现无人值守巡检、自动建卡与结果回流。
+          <div className="mx-auto max-w-4xl space-y-5">
+            {!workflowsEnabled ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-xs">
+                <div className="space-y-0.5">
+                  <p className="font-semibold text-foreground">自动化工作流引擎当前处于关闭状态</p>
+                  <p className="text-muted-foreground">
+                    默认保持关闭、零后台 Token 消耗。开启后可查看并运行预置的 6 套 `.flow.json`
+                    案例并与 Bot 联动。
                   </p>
                 </div>
-                <Link to="/workflows" search={{ env: environmentId }}>
-                  <Button size="compact">
-                    <WorkflowIcon />
-                    打开工作流编排
-                  </Button>
-                </Link>
+                <Button
+                  size="compact"
+                  disabled={!canUpdateSettings || enablingWorkflows}
+                  onClick={() => void handleEnableWorkflows()}
+                >
+                  <PowerIcon />
+                  {enablingWorkflows ? "开启中..." : "开启工作流引擎"}
+                </Button>
+              </div>
+            ) : null}
+
+            <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-foreground">
+                    Bot 集群与可视化工作流联动
+                  </h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    每位常驻 Bot 可绑定多个 LUNA-020 `.flow.json`
+                    工作流与触发器，点击即可运行或进入画布编辑。
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {workflowsEnabled && missingDefaultFlows.length > 0 ? (
+                    <Button
+                      size="compact"
+                      variant="outline"
+                      disabled={!canSaveWorkflow || seedingFlows}
+                      onClick={() => void handleSeedDefaultFlows()}
+                    >
+                      <FolderPlusIcon />
+                      {seedingFlows ? "导入中..." : `补齐默认案例 (+${missingDefaultFlows.length})`}
+                    </Button>
+                  ) : null}
+                  <Link to="/workflows" search={{ env: environmentId }}>
+                    <Button size="compact">
+                      <WorkflowIcon />
+                      打开工作流编排
+                    </Button>
+                  </Link>
+                </div>
               </div>
               <div className="space-y-2 pt-2">
                 {bots.map((bot) => (
@@ -818,9 +1030,35 @@ export function LunaBotsWorkspace() {
                     <div className="flex flex-wrap items-center gap-1.5">
                       {bot.linkedWorkflowNames.length > 0 ? (
                         bot.linkedWorkflowNames.map((wf) => (
-                          <Badge key={wf} size="sm" variant="info">
-                            {wf}
-                          </Badge>
+                          <div
+                            key={wf}
+                            className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-0.5"
+                          >
+                            <span className="font-mono text-2xs text-foreground">{wf}</span>
+                            {workflowsEnabled ? (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={!canStartWorkflow || startingWorkflowName !== null}
+                                  className="cursor-pointer rounded px-1 py-0.5 text-3xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
+                                  onClick={() => void handleStartWorkflow(wf)}
+                                >
+                                  {startingWorkflowName === wf ? "..." : "运行"}
+                                </button>
+                                <Link
+                                  to="/workflows"
+                                  search={{
+                                    env: environmentId,
+                                    definitions: true,
+                                    file: `${wf}.flow.json`,
+                                  }}
+                                  className="rounded px-1 py-0.5 text-3xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                                >
+                                  画布
+                                </Link>
+                              </>
+                            ) : null}
+                          </div>
                         ))
                       ) : (
                         <span className="text-muted-foreground">未绑定工作流</span>
@@ -838,6 +1076,76 @@ export function LunaBotsWorkspace() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-sm font-semibold text-foreground">
+                    精选可视化工作流案例库（共 {FLOW_TEMPLATES.length} 套）
+                  </h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    融合 Orca 多代理分工与 GitHub Agentic Workflows (gh-aw)
+                    最佳实践，默认触发器均为按需手动运行，绝不隐式消耗 Token。
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {FLOW_TEMPLATES.map((item) => {
+                  const exists = existingFlowFiles.has(item.defaultFileName.toLowerCase());
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex flex-col justify-between gap-3 rounded-xl border border-border bg-background/60 p-3.5 text-xs"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap items-center justify-between gap-1.5">
+                          <span className="font-semibold text-foreground">{item.label}</span>
+                          <div className="flex items-center gap-1">
+                            <Badge size="sm" variant="outline">
+                              {item.category}
+                            </Badge>
+                            <Badge size="sm" variant="info">
+                              @{item.recommendedBotHandle}
+                            </Badge>
+                          </div>
+                        </div>
+                        <p className="font-mono text-3xs text-muted-foreground">
+                          {item.defaultFileName} · {item.recommendedTriggerHint}
+                        </p>
+                        <p className="leading-relaxed text-muted-foreground">{item.description}</p>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-end gap-1.5 pt-1">
+                        {exists ? (
+                          <Link
+                            to="/workflows"
+                            search={{
+                              env: environmentId,
+                              definitions: true,
+                              file: item.defaultFileName,
+                            }}
+                          >
+                            <Button size="micro" variant="outline">
+                              打开画布
+                            </Button>
+                          </Link>
+                        ) : (
+                          <Button
+                            size="micro"
+                            variant="outline"
+                            disabled={
+                              !workflowsEnabled || !canSaveWorkflow || creatingFlowId !== null
+                            }
+                            onClick={() => void handleCreateTemplateFlow(item)}
+                          >
+                            {creatingFlowId === item.id ? "创建中..." : "一键创建"}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>

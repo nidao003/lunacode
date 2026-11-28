@@ -30,7 +30,7 @@ import {
 import { useProjects } from "~/state/entities";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { extractBotErrorMessage } from "./LunaBotAvatar";
+import { LunaBotAvatar, extractBotErrorMessage } from "./LunaBotAvatar";
 
 const INPUT_CLASS =
   "h-8 w-full rounded-md border border-input bg-background px-2.5 text-xs text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/25";
@@ -46,6 +46,7 @@ function DispatchForm({
   defaultBotId,
   defaultTaskId,
   defaultMode,
+  defaultPrompt,
   defaultProjectId,
   onOpenChange,
   onDispatched,
@@ -56,6 +57,7 @@ function DispatchForm({
   readonly defaultBotId: BotId | null;
   readonly defaultTaskId: BotTaskId | null;
   readonly defaultMode: "worker" | "message";
+  readonly defaultPrompt: string;
   readonly defaultProjectId: ProjectId | null;
   readonly onOpenChange: (open: boolean) => void;
   readonly onDispatched?: ((threadId: ThreadId, environmentId: EnvironmentId) => void) | undefined;
@@ -89,7 +91,7 @@ function DispatchForm({
     initialBot?.workspaceStrategy ?? "worktree",
   );
   const [title, setTitle] = useState("");
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(defaultPrompt);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -157,14 +159,26 @@ function DispatchForm({
   };
 
   return (
-    <form onSubmit={(event) => void handleSubmit(event)}>
+    <form
+      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      onSubmit={(event) => void handleSubmit(event)}
+    >
       <DialogHeader>
-        <DialogTitle>
-          {mode === "worker" ? "派发 Worker 执行线程" : "向 Bot 主对话发消息"}
-        </DialogTitle>
-        <DialogDescription>
-          Worker 会在独立 Worktree 或工作区根目录开启子线程并自动关联到 #N 任务卡。
-        </DialogDescription>
+        <div className="flex items-center gap-2.5">
+          {activeBot ? (
+            <LunaBotAvatar avatar={activeBot.avatar} accent={activeBot.accent} size="md" />
+          ) : null}
+          <div>
+            <DialogTitle>
+              {mode === "worker" ? "派发 Worker 执行线程" : "向 Bot 主对话发消息"}
+            </DialogTitle>
+            <DialogDescription>
+              {activeBot
+                ? `${activeBot.name} (@${activeBot.handle}) · ${activeBot.role}`
+                : "Worker 会在独立 Worktree 或工作区根目录开启子线程并自动关联到 #N 任务卡。"}
+            </DialogDescription>
+          </div>
+        </div>
       </DialogHeader>
 
       <DialogPanel>
@@ -339,6 +353,7 @@ export function LunaBotDispatchDialog({
   defaultBotId = null,
   defaultTaskId = null,
   defaultMode = "worker",
+  defaultPrompt = "",
   defaultProjectId = null,
   onOpenChange,
   onDispatched,
@@ -350,6 +365,7 @@ export function LunaBotDispatchDialog({
   readonly defaultBotId?: BotId | null;
   readonly defaultTaskId?: BotTaskId | null;
   readonly defaultMode?: "worker" | "message";
+  readonly defaultPrompt?: string;
   readonly defaultProjectId?: ProjectId | null;
   readonly onOpenChange: (open: boolean) => void;
   readonly onDispatched?: ((threadId: ThreadId, environmentId: EnvironmentId) => void) | undefined;
@@ -359,13 +375,14 @@ export function LunaBotDispatchDialog({
       <DialogPopup className="max-w-lg">
         {open ? (
           <DispatchForm
-            key={`${defaultBotId ?? "any"}:${defaultTaskId ?? "none"}:${defaultMode}`}
+            key={`${defaultBotId ?? "any"}:${defaultTaskId ?? "none"}:${defaultMode}:${defaultPrompt}`}
             environmentId={environmentId}
             bots={bots}
             tasks={tasks}
             defaultBotId={defaultBotId}
             defaultTaskId={defaultTaskId}
             defaultMode={defaultMode}
+            defaultPrompt={defaultPrompt}
             defaultProjectId={defaultProjectId}
             onOpenChange={onOpenChange}
             {...(onDispatched ? { onDispatched } : {})}

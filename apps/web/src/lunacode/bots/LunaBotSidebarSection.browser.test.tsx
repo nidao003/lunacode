@@ -33,16 +33,34 @@ vi.mock(import("../../hooks/useNowMinute"), () => ({
   useNowMinute: () => "2026-11-28T02:00:00.000Z",
 }));
 
+vi.mock(import("../../components/workflows/useWorkflowEnvironmentIds"), () => ({
+  useWorkflowEnvironmentIds: () => [ENV_ID],
+}));
+
 vi.mock(import("../../state/query"), (() => ({
-  useEnvironmentQuery: () => ({
-    data: hoisted.snapshot,
-    error: null,
-    isPending: false,
-    isSuccess: true,
-    dataUpdatedAt: 0,
-    failure: null,
-    refresh: () => {},
-  }),
+  useEnvironmentQuery: (arg: { readonly label?: string } | null) => {
+    const label = arg?.label ?? "";
+    if (label.includes("workflows") || label.includes("workflowsLive")) {
+      return {
+        data: { runs: [], questions: [] },
+        error: null,
+        isPending: false,
+        isSuccess: true,
+        dataUpdatedAt: 0,
+        failure: null,
+        refresh: () => {},
+      };
+    }
+    return {
+      data: hoisted.snapshot,
+      error: null,
+      isPending: false,
+      isSuccess: true,
+      dataUpdatedAt: 0,
+      failure: null,
+      refresh: () => {},
+    };
+  },
 })) as never);
 
 vi.mock(import("../../state/entities"), async (original) => {
@@ -212,6 +230,8 @@ describe("LunaBotSidebarSection", () => {
 
     expect(page.getByText("Scout").element()).toBeTruthy();
     expect(page.getByText("待确认 1").element()).toBeTruthy();
+    expect(page.getByText("1 工作中").element()).toBeTruthy();
+    expect(treeScreen.container.querySelector("img")).toBeTruthy();
 
     await userEvent.click(page.getByRole("button", { name: /safari-pay-click/ }));
     expect(hoisted.navigated).toContainEqual({

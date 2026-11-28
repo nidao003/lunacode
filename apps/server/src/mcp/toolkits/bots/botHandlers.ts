@@ -27,12 +27,22 @@ function mapBotFailure(error: unknown): OrchestratorMcpFailure {
 }
 
 function findBot(bots: ReadonlyArray<PersistentBot>, query: string): PersistentBot | undefined {
-  const normalized = query.trim().replace(/^@/, "").toLowerCase();
-  return bots.find(
-    (bot) =>
-      bot.id === query.trim() ||
-      bot.handle.toLowerCase() === normalized ||
-      bot.name.toLowerCase() === normalized,
+  const trimmed = query.trim();
+  if (!trimmed) return undefined;
+  const normalized = trimmed.replace(/^@/, "").toLowerCase();
+  const slugified = normalized.replace(/\s+/g, "-");
+  return (
+    bots.find(
+      (bot) =>
+        bot.id === trimmed ||
+        bot.handle.toLowerCase() === normalized ||
+        bot.handle.toLowerCase() === slugified ||
+        bot.name.toLowerCase() === normalized,
+    ) ??
+    (() => {
+      const partialMatches = bots.filter((bot) => bot.name.toLowerCase().includes(normalized));
+      return partialMatches.length === 1 ? partialMatches[0] : undefined;
+    })()
   );
 }
 

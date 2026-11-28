@@ -29,7 +29,11 @@ import { isFlowDefinitionFile } from "@t3tools/client-runtime/lunacode/workflow-
 import { type DiskChange, diskChange, staleAfterSave } from "./WorkflowDefinitionEditor.logic";
 import { WorkflowsEmpty } from "./WorkflowRunsView";
 import { LunaFlowStudio } from "../../lunacode/workflows/LunaFlowStudio";
-import { LunaFlowFileBadge, LunaNewFlowButton } from "../../lunacode/workflows/LunaNewFlowButton";
+import {
+  LunaFlowFileBadge,
+  LunaNewFlowButton,
+  LunaSeedDefaultFlowsButton,
+} from "../../lunacode/workflows/LunaNewFlowButton";
 
 type DefinitionEditor = Editor<"file", undefined, undefined>;
 const createEditor: EditorFactory<undefined, undefined> = (editorType, options, editStateKey) =>
@@ -528,6 +532,11 @@ export default function WorkflowDefinitionEditor({
             </p>
             {single || !canChange ? null : naming === null ? (
               <div className="flex shrink-0 items-center gap-1.5">
+                <LunaSeedDefaultFlowsButton
+                  environmentId={environmentId}
+                  existingFileNames={files.map((f) => f.name)}
+                  onSeeded={open}
+                />
                 <LunaNewFlowButton environmentId={environmentId} onCreated={open} />
                 <Button size="sm" variant="outline" onClick={() => setNaming("")}>
                   <PlusIcon />
