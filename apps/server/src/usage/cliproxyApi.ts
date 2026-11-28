@@ -5,7 +5,6 @@ import {
   type UsageLimitSourceAccount,
   type UsageLimitSourceConfig,
 } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Cause from "effect/Cause";
 import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
@@ -83,11 +82,11 @@ const CreditList = Schema.Struct({
 const decodeAuthFiles = Schema.decodeUnknownEffect(AuthFiles);
 const decodeAuthFileModels = Schema.decodeUnknownEffect(AuthFileModels);
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
+const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeApiResponse = Schema.decodeUnknownEffect(ApiResponse);
 const decodeCreditList = Schema.decodeUnknownEffect(Schema.fromJsonString(CreditList));
 const decodeCodexUsage = Schema.decodeUnknownEffect(Schema.fromJsonString(CodexUsage));
 const decodeGrokUsage = Schema.decodeUnknownEffect(Schema.fromJsonString(GrokUsageResponse));
-const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 const isUsageLimitSourceError = Schema.is(UsageLimitSourceError);
 
 // Extra CAs can fix untrusted chains; expiry/hostname failures report codes only.
@@ -132,6 +131,7 @@ const decodeConsumeResponse = Schema.decodeUnknownEffect(
   ),
 );
 
+const OPTIONAL_HUB_CALL_TIMEOUT = "2 seconds";
 const CODEX_BASE = "https://chatgpt.com/backend-api/wham";
 const CREDIT_URL = `${CODEX_BASE}/rate-limit-reset-credits`;
 
@@ -165,16 +165,12 @@ type HubCall = (
 type HubReading = Omit<UsageLimitSourceAccount, "id" | "driver">;
 interface HubProvider {
   readonly driver: ProviderDriverKind;
-  readonly header: (
-    account: AuthFile,
-    platform: NodeJS.Platform,
-    architecture: NodeJS.Architecture,
-  ) => Record<string, string>;
+  readonly header: (account: AuthFile) => Record<string, string>;
   readonly read: (input: {
     readonly account: AuthFile;
     readonly call: HubCall;
     readonly checkedAt: string;
-  }) => Effect.Effect<HubReading, UsageLimitSourceError | Schema.SchemaError, Digest.Digest>;
+  }) => Effect.Effect<HubReading, UsageLimitSourceError | Schema.SchemaError>;
 }
 
 const listedIdentity = (account: AuthFile) => ({
@@ -209,7 +205,17 @@ const CODEX_HUB: HubProvider = {
       : {}),
   }),
   read: Effect.fnUntraced(function* ({ account, call, checkedAt }) {
-    const usage = yield* decodeCodexUsage(yield* call(`${CODEX_BASE}/usage`));
+    const [usage, available] = yield* Effect.all(
+      [
+        call(`${CODEX_BASE}/usage`).pipe(Effect.flatMap(decodeCodexUsage)),
+        credits(call).pipe(
+          Effect.timeoutOption(OPTIONAL_HUB_CALL_TIMEOUT),
+          Effect.map(Option.getOrUndefined),
+          Effect.orElseSucceed(() => undefined),
+        ),
+      ],
+      { concurrency: 2 },
+    );
     const toWindow = (window: typeof CodexWindow.Type | null | undefined) =>
       window
         ? {
@@ -220,7 +226,6 @@ const CODEX_HUB: HubProvider = {
               : { windowDurationMins: window.limit_window_seconds / 60 }),
           }
         : null;
-    const available = yield* credits(call).pipe(Effect.orElseSucceed(() => undefined));
     const next = available?.[0];
     const planType =
       usage.plan_type ?? account.id_token?.plan_type ?? account.id_token?.chatgpt_plan_type;
@@ -290,8 +295,6 @@ const HUB_PROVIDERS = new Map<string, HubProvider>([
 export const makeCliproxyApi = Effect.gen(function* () {
   const client = yield* HttpClient.HttpClient;
   const digest = yield* Digest.Digest;
-  const platform = yield* HostProcess.Platform;
-  const architecture = yield* HostProcess.Architecture;
 
   const management = Effect.fn("CliproxyApi.management")(function* (
     hub: CliproxyHub,
@@ -371,10 +374,8 @@ export const makeCliproxyApi = Effect.gen(function* () {
     provider: HubProvider,
   ) {
     const checkedAt = DateTime.formatIso(yield* DateTime.now);
-    const call: HubCall = (url, data) =>
-      apiCall(hub, account, provider.header(account, platform, architecture), url, data);
+    const call: HubCall = (url, data) => apiCall(hub, account, provider.header(account), url, data);
     const reading = yield* provider.read({ account, call, checkedAt }).pipe(
-      Effect.provideService(Digest.Digest, digest),
       Effect.catch((error) =>
         Effect.succeed({
           ...listedIdentity(account),
@@ -394,7 +395,13 @@ export const makeCliproxyApi = Effect.gen(function* () {
 
   const readAccounts = Effect.fn("CliproxyApi.readAccounts")(function* (
     hub: CliproxyHub,
-  ): Effect.fn.Return<ReadonlyArray<UsageLimitSourceAccount>, UsageLimitSourceError> {
+  ): Effect.fn.Return<
+    {
+      readonly accounts: ReadonlyArray<UsageLimitSourceAccount>;
+      readonly unreadProviders: ReadonlyArray<string>;
+    },
+    UsageLimitSourceError
+  > {
     const accounts = yield* authFiles(hub).pipe(
       Effect.mapError((error) =>
         isUsageLimitSourceError(error)
@@ -406,12 +413,21 @@ export const makeCliproxyApi = Effect.gen(function* () {
       const provider = HUB_PROVIDERS.get(account.provider);
       return provider && !account.disabled ? [{ account, provider }] : [];
     });
+    const unreadProviders = [
+      ...new Set(
+        accounts.flatMap((account) =>
+          account.disabled || HUB_PROVIDERS.has(account.provider) || !account.provider.trim()
+            ? []
+            : [account.provider.trim()],
+        ),
+      ),
+    ].toSorted();
     // Model lists are optional, so their lookups run apart from the quota reads and stop at one
     // short deadline; a slow lookup must not push a refresh past its budget.
     const [readings, models] = yield* Effect.all(
       [
         Effect.forEach(readable, ({ account, provider }) => readAccount(hub, account, provider), {
-          concurrency: 4,
+          concurrency: 16,
         }),
         Effect.forEach(
           readable,
@@ -425,10 +441,13 @@ export const makeCliproxyApi = Effect.gen(function* () {
       ],
       { concurrency: 2 },
     );
-    return readings.map((reading, index) => {
-      const listed = models[index];
-      return listed && Option.isSome(listed) ? { ...reading, models: listed.value } : reading;
-    });
+    return {
+      accounts: readings.map((reading, index) => {
+        const listed = models[index];
+        return listed && Option.isSome(listed) ? { ...reading, models: listed.value } : reading;
+      }),
+      unreadProviders,
+    };
   });
 
   const consume = Effect.fn("CliproxyApi.consume")(function* (
@@ -446,7 +465,7 @@ export const makeCliproxyApi = Effect.gen(function* () {
       const body = yield* apiCall(
         hub,
         account,
-        CODEX_HUB.header(account, platform, architecture),
+        CODEX_HUB.header(account),
         `${CREDIT_URL}/consume`,
         {
           redeem_request_id: yield* creditRedeemRequestId(

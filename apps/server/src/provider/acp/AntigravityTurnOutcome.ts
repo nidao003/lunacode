@@ -19,6 +19,8 @@ const ERROR_STEP_TYPE = 17;
 const PLANNER_RESPONSE_STEP_TYPE = 15;
 // CORTEX_STEP_TYPE_SYSTEM_MESSAGE: trailing system notices/reminders must not mask an error step.
 const SYSTEM_MESSAGE_STEP_TYPE = 101;
+// CORTEX_STEP_STATUS_DONE.
+const DONE_STEP_STATUS = 3;
 // The harness error text leads the payload; a Go stack trace follows it.
 const MAX_ERROR_PAYLOAD_BYTES = 16_384;
 // The Go harness's rendering of a Google API error, as the agent's api_errors.py reads it.
@@ -80,6 +82,7 @@ const NATIVE_SESSION_ID = /^[\w-]+$/;
 
 interface LastStep {
   readonly type: number;
+  readonly status: number | null;
   readonly payload: Uint8Array | null;
   readonly reachedModel: boolean;
 }
@@ -121,9 +124,13 @@ const lastStepIndex = (database: NodeSqlite.DatabaseSync) => {
 const lastStepAfter =
   (index: number) =>
   (database: NodeSqlite.DatabaseSync): LastStep | undefined => {
+    const hasStatus =
+      database.prepare("SELECT 1 FROM pragma_table_info('steps') WHERE name = 'status'").get() !==
+      undefined;
     const row = database
       .prepare(
-        `SELECT step_type AS type, substr(step_payload, 1, ?) AS payload
+        `SELECT step_type AS type, ${hasStatus ? "status" : "NULL"} AS status,
+           substr(step_payload, 1, ?) AS payload
          FROM steps WHERE idx > ? AND step_type != ? ORDER BY idx DESC LIMIT 1`,
       )
       .get(MAX_ERROR_PAYLOAD_BYTES, index, SYSTEM_MESSAGE_STEP_TYPE);
@@ -134,6 +141,7 @@ const lastStepAfter =
         .get(index, PLANNER_RESPONSE_STEP_TYPE) !== undefined;
     return {
       type: row.type,
+      status: typeof row.status === "number" ? row.status : null,
       payload: row.payload instanceof Uint8Array ? row.payload : null,
       reachedModel,
     };
@@ -365,7 +373,15 @@ export const watchAntigravityPromptOutcome = Effect.fn("AntigravityTurnOutcome.w
         )
       : undefined;
     // A retired prompt's check runs long after the error, so a relative delay has no anchor.
-    const now = options?.retired === true ? undefined : yield* DateTime.now;
-    return turnFailure(result.stopReason, step, now);
+    const retired = options?.retired === true;
+    const now = retired ? undefined : yield* DateTime.now;
+    const failure = turnFailure(result.stopReason, step, now);
+    // The reply finished but session/prompt never answered.
+    const finished =
+      retired &&
+      failure === undefined &&
+      step?.type === PLANNER_RESPONSE_STEP_TYPE &&
+      step.status === DONE_STEP_STATUS;
+    return finished ? ("completed" as const) : failure;
   });
 });

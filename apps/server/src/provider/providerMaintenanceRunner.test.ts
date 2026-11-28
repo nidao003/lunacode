@@ -208,7 +208,7 @@ function makeRegistry(
       getProviders: Ref.get(providersRef),
       refresh: () => Ref.get(providersRef),
       awaitUsageRefresh: Effect.void,
-      refreshUsageLimits: () => Ref.get(providersRef),
+      refreshUsageLimitsManual: () => Ref.get(providersRef),
       refreshInstance: () => Ref.get(providersRef),
       reloadSecretsAndRefresh: () => Ref.get(providersRef),
       rebuildMissingAndRefresh: Ref.get(providersRef),
@@ -226,8 +226,10 @@ function makeRegistry(
         );
       },
       refreshWorkspaceSnapshot: () => Ref.get(providersRef),
+      runtimeModeLimits: () => Effect.succeed([]),
       invalidateModelCaches: () => Effect.void,
       refreshModelCatalog: Effect.void,
+      refreshUsageLimits: () => Effect.void,
       getProviderMaintenanceCapabilitiesForInstance: (_instanceId, provider) =>
         Effect.succeed(lifecycleFor(provider)),
       setProviderMaintenanceActionState,
@@ -540,6 +542,42 @@ describe("providerMaintenanceRunner", () => {
       );
     },
   );
+
+  it.effect("an update that leaves the provider unable to start reports the probe's reason", () => {
+    const probeMessage =
+      "Codex app-server provider probe failed: Codex App Server process exited with code 1: Error: Missing optional dependency @openai/codex-linux-x64. Reinstall Codex: npm install -g @openai/codex@latest.";
+    return Effect.gen(function* () {
+      const { registry, providersRef } = yield* makeRegistry(baseProvider);
+      const updater = yield* makeTestRunner({
+        ...registry,
+        refreshAfterUpdate: () =>
+          Ref.updateAndGet(providersRef, (providers) =>
+            providers.map((provider) => ({
+              ...provider,
+              installed: true,
+              version: null,
+              status: "error" as const,
+              auth: { status: "unknown" as const },
+              message: probeMessage,
+            })),
+          ),
+      });
+
+      const result = yield* updater.updateProvider(CODEX_DRIVER);
+      assert.include(
+        result.providers[0]?.updateState?.message ?? "",
+        "Missing optional dependency",
+      );
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          layerNonWindowsPlatform,
+          layerLatestVersionHttpClient("1.0.0"),
+          layerMockSpawner(() => ({ stdout: "updated" })),
+        ),
+      ),
+    );
+  });
 
   it.effect("spawns the updater with the environment its capabilities declare", () => {
     const seen: Array<NodeJS.ProcessEnv | undefined> = [];

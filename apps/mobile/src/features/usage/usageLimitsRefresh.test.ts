@@ -10,6 +10,13 @@ const state = vi.hoisted(() => ({
   refresh: (_environmentId: string): Promise<RefreshResult> => {
     throw new Error("refresh not set up");
   },
+  inputs: [] as Array<
+    | {
+        readonly limitsOnly?: boolean;
+        readonly manualUsageRefresh?: boolean;
+      }
+    | undefined
+  >,
 }));
 vi.mock("../../state/server", async () => {
   const Effect = await import("effect/Effect");
@@ -17,12 +24,23 @@ vi.mock("../../state/server", async () => {
     serverEnvironment: {
       refreshProviders: {
         label: "refresh providers",
-        run: (_registry: unknown, input: { readonly environmentId: string }) =>
-          Effect.promise(() => state.refresh(input.environmentId)).pipe(
+        run: (
+          _registry: unknown,
+          input: {
+            readonly environmentId: string;
+            readonly input?: {
+              readonly limitsOnly?: boolean;
+              readonly manualUsageRefresh?: boolean;
+            };
+          },
+        ) => {
+          state.inputs.push(input.input);
+          return Effect.promise(() => state.refresh(input.environmentId)).pipe(
             Effect.flatMap((result) =>
               result._tag === "Failure" ? Effect.failCause(result.cause) : Effect.void,
             ),
-          ),
+          );
+        },
       },
     },
   };
@@ -39,6 +57,7 @@ const failure: RefreshResult = AsyncResult.failure(Cause.fail("offline"));
 
 function setup(refresh: (environmentId: string) => Promise<RefreshResult>) {
   state.refresh = refresh;
+  state.inputs = [];
   const registry = AtomRegistry.make();
   return {
     registry,
@@ -104,4 +123,14 @@ it("skips an automatic refresh inside the throttle window without touching the o
   expect(failures([a])).toEqual([a]);
   await refreshEnvironmentLimits(registry, a);
   expect(failures([a])).toEqual([]);
+  expect(state.inputs).toEqual([{ manualUsageRefresh: true }, { manualUsageRefresh: true }]);
+});
+
+it("passes limitsOnly for automatic refreshes and manualUsageRefresh for manual refreshes", async () => {
+  const a = EnvironmentId.make("mobile-limits-mode-auto");
+  const b = EnvironmentId.make("mobile-limits-mode-manual");
+  setup(() => Promise.resolve(success));
+  await refreshEnvironmentLimits(AtomRegistry.make(), a, { automatic: true });
+  await refreshEnvironmentLimits(AtomRegistry.make(), b);
+  expect(state.inputs).toEqual([{ limitsOnly: true }, { manualUsageRefresh: true }]);
 });

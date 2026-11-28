@@ -1,6 +1,8 @@
 import {
   FULL_ACCESS_OVERRIDE_QUESTION,
   fullAccessOverrideExplanation,
+  PUSH_HOOKS_APPROVAL_LABEL,
+  PUSH_HOOKS_APPROVAL_QUESTION,
 } from "@t3tools/client-runtime/state/thread-requests";
 import { T, useMessages } from "gt-react";
 import { ShieldIcon } from "lucide-react";
@@ -9,7 +11,9 @@ import { APPROVAL_KIND_META } from "../../lunacode/approvalPresentation";
 import { type PendingApproval } from "../../session-logic";
 import { InlineButton } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { ApprovalText } from "./ApprovalText";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
+import { PushHooksApprovalDetails } from "./PushHooksApprovalDetails";
 import { ToolActivityIconView, type WorkEntryIconName } from "./TimelineToolActivityIcon";
 import { TimelineRowCtx } from "./timelineRowContext";
 
@@ -29,13 +33,15 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
   const { respondingRequestIds, canOperateThread, onRespondToApproval } = use(TimelineRowCtx);
   const m = useMessages();
   const meta = APPROVAL_KIND_META[approval.requestKind];
-  const iconName = APPROVAL_ICON_BY_KIND[approval.requestKind];
+  const { pushHooks } = approval;
+  const label = pushHooks ? PUSH_HOOKS_APPROVAL_LABEL : meta.label;
+  const iconName = pushHooks ? "terminal" : APPROVAL_ICON_BY_KIND[approval.requestKind];
   const canRespond = approval.responseCapability === "live";
 
   return (
     <div
       role="group"
-      aria-label={m(meta.label)}
+      aria-label={m(label)}
       data-v2-item-type="approval_request"
       className="my-1.5 rounded-xl border border-warning/35 bg-warning/6 px-3.5 py-2.5 text-xs shadow-xs"
     >
@@ -53,7 +59,7 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
         <span aria-hidden className="text-muted-foreground/60">
           ·
         </span>
-        <span className="font-medium text-foreground">{m(meta.label)}</span>
+        <span className="font-medium text-foreground">{m(label)}</span>
         {approval.appName ? (
           <span className="rounded-md border border-border/70 bg-background/80 px-1.5 py-0.5 text-2xs font-medium text-foreground/85">
             {approval.appName}
@@ -77,14 +83,18 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
       </div>
 
       <div className="mt-2 rounded-lg border border-border/70 bg-background/85 px-2.5 py-2">
-        <code
-          aria-label={m(meta.detailLabel)}
-          className="block max-h-40 min-w-0 overflow-auto whitespace-pre-wrap font-mono text-xs leading-5 text-foreground select-text! wrap-anywhere [scrollbar-width:thin] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-          data-approval-detail="complete"
-          tabIndex={0}
-        >
-          {approval.detail || m(meta.label)}
-        </code>
+        {pushHooks ? (
+          <>
+            <span className="block min-w-0 text-foreground select-text! wrap-anywhere">
+              {m(PUSH_HOOKS_APPROVAL_QUESTION)}
+            </span>
+            <div className="mt-1.5">
+              <PushHooksApprovalDetails pushHooks={pushHooks} />
+            </div>
+          </>
+        ) : (
+          <ApprovalText text={approval.detail || m(meta.label)} label={m(meta.detailLabel)} />
+        )}
       </div>
 
       {approval.reason ? (

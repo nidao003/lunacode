@@ -214,7 +214,7 @@ describe("CLIProxyAPI built-in management API", () => {
         yield* TestClock.setTime(1788710400000);
         const test = fixture();
         const api = yield* test.api;
-        const result = yield* api.readAccounts(config);
+        const { accounts: result } = yield* api.readAccounts(config);
         expect(result.map((account) => account.usageLimits.resetCredits)).toEqual([
           { availableCount: 2, nextCreditId: "first", nextExpiresAt: "2099-01-01T00:00:00.000Z" },
           { availableCount: 2, nextCreditId: "first", nextExpiresAt: "2099-01-01T00:00:00.000Z" },
@@ -249,7 +249,7 @@ describe("CLIProxyAPI built-in management API", () => {
               : Response.json({}, { status: 404 }),
       });
       const api = yield* test.api;
-      const result = yield* api.readAccounts(config);
+      const { accounts: result } = yield* api.readAccounts(config);
       expect(result.map((account) => account.models)).toEqual([["gpt-5.6-sol"], undefined, []]);
       expect(result[1]?.usageLimits.windows).toHaveLength(1);
     }),
@@ -284,7 +284,7 @@ describe("CLIProxyAPI built-in management API", () => {
         }),
       });
       const api = yield* test.api;
-      const result = yield* api.readAccounts(config);
+      const { accounts: result } = yield* api.readAccounts(config);
       expect(result.map((account) => [account.plan, account.usageLimits.windows[0]?.kind])).toEqual(
         [
           ["ChatGPT Plus Subscription", "session"],
@@ -340,7 +340,7 @@ describe("CLIProxyAPI built-in management API", () => {
             : { status: 200, body: { rate_limit: { primary_window: { used_percent: 12 } } } },
       });
       const api = yield* test.api;
-      const result = yield* api.readAccounts(config);
+      const { accounts: result } = yield* api.readAccounts(config);
       expect(result[0]?.usageLimits.windows[0]?.usedPercent).toBe(12);
       expect(result[0]?.usageLimits.resetCredits).toBeUndefined();
     }),
@@ -360,7 +360,7 @@ describe("CLIProxyAPI built-in management API", () => {
               },
       });
       const api = yield* test.api;
-      const result = yield* api.readAccounts(config);
+      const { accounts: result } = yield* api.readAccounts(config);
       expect(result[0]?.usageLimits.unavailable).toEqual({
         reason: "probeFailed",
         message: "The provider refused the hub request (HTTP 401).",
@@ -384,7 +384,9 @@ describe("CLIProxyAPI built-in management API", () => {
           },
         }),
       });
-      const [account] = yield* (yield* test.api).readAccounts(config);
+      const {
+        accounts: [account],
+      } = yield* (yield* test.api).readAccounts(config);
       expect(account).toMatchObject({ driver: "grok", email: "x@example.com" });
       expect(account?.usageLimits.windows).toMatchObject([
         { id: "subscription", kind: "weekly", usedPercent: 40 },
@@ -406,10 +408,12 @@ describe("CLIProxyAPI built-in management API", () => {
   ])("reports $name as unreadable", ({ provider, status, body }) =>
     Effect.gen(function* () {
       const test = fixture({
-        accounts: [{ id: `${provider}.json`, auth_index: "a", provider, project_id: "project-7" }],
+        accounts: [{ id: `${provider}.json`, auth_index: "a", provider }],
         upstream: () => ({ status, body }),
       });
-      const [account] = yield* (yield* test.api).readAccounts(config);
+      const {
+        accounts: [account],
+      } = yield* (yield* test.api).readAccounts(config);
       expect(account?.usageLimits.unavailable?.reason).toBe("probeFailed");
     }),
   );
@@ -419,6 +423,8 @@ describe("CLIProxyAPI built-in management API", () => {
       const test = fixture({
         accounts: [
           { id: "kiro.json", auth_index: "k", provider: "kiro", email: "k@example.com" },
+          // Antigravity only allows ACP clients, so its internal quota API is never called.
+          { id: "antigravity.json", auth_index: "g", provider: "antigravity", project_id: "p" },
           { ...accounts[0]!, provider: "claude" },
           {
             id: "antigravity.json",
@@ -439,9 +445,11 @@ describe("CLIProxyAPI built-in management API", () => {
           },
         }),
       });
-      const result = yield* (yield* test.api).readAccounts(config);
+      const { accounts: result, unreadProviders } = yield* (yield* test.api).readAccounts(config);
       expect(result.map((account) => account.driver)).toEqual(["grok"]);
+      expect(unreadProviders).toEqual(["antigravity", "claude", "kiro"]);
       expect(test.requests.map((request) => request.body?.auth_index)).not.toContain("k");
+      expect(test.requests.map((request) => request.body?.auth_index)).not.toContain("g");
       expect(test.requests.map((request) => request.body?.auth_index)).not.toContain("a");
       expect(test.requests.map((request) => request.body?.auth_index)).not.toContain("ag");
     }),
@@ -485,10 +493,29 @@ describe("CLIProxyAPI built-in management API", () => {
     Effect.gen(function* () {
       const test = fixture({ accounts: [{ ...accounts[0]!, disabled: true }] });
       const api = yield* test.api;
-      expect(yield* api.readAccounts(config)).toEqual([]);
+      expect(yield* api.readAccounts(config)).toEqual({ accounts: [], unreadProviders: [] });
       expect((yield* api.consume(config, "first.json", "credit").pipe(Effect.result))._tag).toBe(
         "Failure",
       );
+      expect(test.requests.every((request) => request.path.endsWith("/auth-files"))).toBe(true);
+    }),
+  );
+
+  it.effect("names the providers of enabled accounts it cannot read", () =>
+    Effect.gen(function* () {
+      const test = fixture({
+        accounts: [
+          { id: "kimi.json", auth_index: "k", provider: "kimi-ai" },
+          { id: "gemini.json", auth_index: "g", provider: "antigravity" },
+          { id: "other.json", auth_index: "o", provider: "kimi-ai" },
+          { id: "off.json", auth_index: "x", provider: "qwen", disabled: true },
+        ],
+      });
+      const api = yield* test.api;
+      expect(yield* api.readAccounts(config)).toEqual({
+        accounts: [],
+        unreadProviders: ["antigravity", "kimi-ai"],
+      });
       expect(test.requests.every((request) => request.path.endsWith("/auth-files"))).toBe(true);
     }),
   );
@@ -559,7 +586,7 @@ describe("CLIProxyAPI built-in management API", () => {
         },
       });
       const result = yield* (yield* test.api).readAccounts(config);
-      expect(result.map((entry) => [entry.driver, entry.plan])).toEqual([
+      expect(result.accounts.map((entry) => [entry.driver, entry.plan])).toEqual([
         ["grok", "SuperGrok Heavy"],
       ]);
     }),

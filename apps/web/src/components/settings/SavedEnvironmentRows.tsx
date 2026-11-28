@@ -4,6 +4,7 @@ import {
   ChevronRightIcon,
   ChevronsLeftRightEllipsisIcon,
   EllipsisIcon,
+  PencilIcon,
   RouteIcon,
 } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
@@ -21,6 +22,8 @@ import {
   connectionErrorText,
   connectionStatusText,
   environmentMcpUrl,
+  localEnvironmentMcpUrl,
+  type ConnectionCatalogEntry,
 } from "@t3tools/client-runtime/connection";
 import * as Option from "effect/Option";
 import { rebrandTextToLunaCode } from "@t3tools/client-runtime/lunacode/brand-display";
@@ -33,6 +36,7 @@ import { SettingsRow } from "./settingsLayout";
 import { useSearchableSetting } from "./settingsSearch";
 import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
 import { EnvironmentRoutesList } from "./EnvironmentRoutesList";
+import { RenameEnvironmentDialog } from "./RenameEnvironmentDialog";
 import {
   ConnectionDiagnosisPanel,
   ConnectionDiagnosisSummary,
@@ -44,6 +48,7 @@ import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/men
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 import { Button, InlineButton } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import {
@@ -54,10 +59,13 @@ import {
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useT3ConnectTurnOn } from "~/cloud/useT3ConnectTurnOn";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
+import { usePrimaryCloudLinkState } from "~/cloud/cloudLinkState";
+import { t3ConnectMcpUrl } from "~/cloud/t3ConnectState";
 import { useManagedTunnelUsage } from "~/cloud/managedRelayState";
 import { useT3ConnectAccountPage } from "../clerk/T3ConnectAccountPages";
-import { TunnelLimitAlert, TunnelUsageMeter } from "../cloud/TunnelUsage";
+import { TunnelLimitAlert, TunnelUsageMeter, TunnelUsageMeterSkeleton } from "../cloud/TunnelUsage";
 import { environmentCatalog } from "~/connection/catalog";
+import { isLoopbackHostname } from "~/environments/primary/target";
 import { readEnvironmentScope } from "~/state/session";
 import { type EnvironmentPresentation, useRelayEnvironmentDiscovery } from "~/state/environments";
 import { APP_VERSION } from "~/branding";
@@ -125,6 +133,35 @@ export function savedBackendStatus(
   }
 }
 
+function useCopyMcpUrl() {
+  const gt = useGT();
+  return useCopyToClipboard<{ url: string }>({
+    target: {
+      target: "MCP URL",
+      unavailableMessage: msg("Clipboard API is unavailable while copying MCP URL."),
+      failureMessage: msg("Failed to copy MCP URL to the clipboard."),
+    },
+    onCopy: ({ url }) => {
+      toastManager.add({
+        type: "success",
+        title: gt("MCP URL copied"),
+        description: gt("Add it to an agent, e.g. claude mcp add --transport http t3 {url}", {
+          url,
+        }),
+      });
+    },
+    onError: (error) => {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: gt("Could not copy MCP URL"),
+          description: error.message,
+        }),
+      );
+    },
+  });
+}
+
 export function SavedBackendListRow({
   environment,
   removingEnvironmentId,
@@ -138,6 +175,7 @@ export function SavedBackendListRow({
   const [routesOpen, setRoutesOpen] = useState(initialRoutesOpen);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [diagnosisOpen, setDiagnosisOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
   const environmentId = environment.environmentId;
   const unsupported = environment.connection.phase === "unsupported";
   const blocked = unsupported && !hasSavedBearerRoute(environment.entry);
@@ -164,31 +202,7 @@ export function SavedBackendListRow({
   const copyTraceId = (traceId: string) => {
     copyTraceIdToClipboard(traceId, { traceId });
   };
-  const { copyToClipboard: copyMcpUrl } = useCopyToClipboard<{ url: string }>({
-    target: {
-      target: "MCP URL",
-      unavailableMessage: msg("Clipboard API is unavailable while copying MCP URL."),
-      failureMessage: msg("Failed to copy MCP URL to the clipboard."),
-    },
-    onCopy: ({ url }) => {
-      toastManager.add({
-        type: "success",
-        title: gt("MCP URL copied"),
-        description: gt("Add it to an agent, e.g. claude mcp add --transport http t3 {url}", {
-          url,
-        }),
-      });
-    },
-    onError: (error) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: gt("Could not copy MCP URL"),
-          description: error.message,
-        }),
-      );
-    },
-  });
+  const { copyToClipboard: copyMcpUrl } = useCopyMcpUrl();
   const versionMismatch = resolveServerConfigVersionMismatch(environment.serverConfig, messages);
   const serverUpdateState = useAtomValue(serverEnvironment.updateStateAtom(environmentId));
   const resumingServerUpdate =
@@ -304,7 +318,11 @@ export function SavedBackendListRow({
             onClick={() => setRoutesOpen((open) => !open)}
             className="inline-flex shrink-0 items-center gap-0.5 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
           >
-            {routeCount === 1 ? gt("Routes") : `${routeCount} routes`}
+            {routeCount === 1
+              ? gt("Routes")
+              : gt("{count, plural, one {{count} route} other {{count} routes}}", {
+                  count: routeCount,
+                })}
             <ChevronRightIcon
               aria-hidden
               className={cn(
@@ -412,26 +430,22 @@ export function SavedBackendListRow({
           appearance="icon"
         />
       ) : null}
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Switch
-              size="sm"
-              checked={enabled}
-              disabled={isRemoving || blocked}
-              aria-label={
-                enabled
-                  ? gt("Switch off {label}", { label: environment.label })
-                  : gt("Switch on {label}", { label: environment.label })
-              }
-              onCheckedChange={(checked) => onSetEnabled(environmentId, checked)}
-            />
-          }
-        />
-        <TooltipPopup side="top">
-          {blocked ? gt("Client not supported") : enabled ? gt("Switch off") : gt("Switch on")}
-        </TooltipPopup>
-      </Tooltip>
+      <SharedTooltipTrigger
+        render={
+          <Switch
+            size="sm"
+            checked={enabled}
+            disabled={isRemoving || blocked}
+            aria-label={
+              enabled
+                ? gt("Switch off {label}", { label: environment.label })
+                : gt("Switch on {label}", { label: environment.label })
+            }
+            onCheckedChange={(checked) => onSetEnabled(environmentId, checked)}
+          />
+        }
+        label={blocked ? gt("Client not supported") : enabled ? gt("Switch off") : gt("Switch on")}
+      />
       <Menu>
         <MenuTrigger
           render={
@@ -451,6 +465,12 @@ export function SavedBackendListRow({
             environmentId={environmentId}
             serverConfig={environment.serverConfig}
           />
+          {environment.relayManaged ? null : (
+            <MenuItem onClick={() => setRenameOpen(true)}>
+              <PencilIcon />
+              <T>Rename…</T>
+            </MenuItem>
+          )}
           <MenuItem onClick={() => setRoutesOpen((open) => !open)}>
             <RouteIcon />
             {routesOpen ? gt("Hide routes") : gt("Routes")}
@@ -471,7 +491,59 @@ export function SavedBackendListRow({
           </MenuItem>
         </MenuPopup>
       </Menu>
+      <RenameEnvironmentDialog
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+        environmentId={environmentId}
+        label={environment.label}
+      />
     </EnvironmentRow>
+  );
+}
+
+/** Copying the host's own MCP address, for hosted agents or agents on this machine. */
+export function LocalEnvironmentMcpUrlRow({ entry }: { readonly entry: ConnectionCatalogEntry }) {
+  const cloudLink = usePrimaryCloudLinkState();
+  const setting = useSearchableSetting();
+  const gt = useGT();
+  const { copyToClipboard: copyMcpUrl } = useCopyMcpUrl();
+  const tunnelMcpUrl = t3ConnectMcpUrl({
+    thisMachine: true,
+    tunnelHostname: cloudLink.data?.tunnelHostname,
+    relayEndpoint: undefined,
+  });
+  const mcpUrl = tunnelMcpUrl ?? localEnvironmentMcpUrl({ entry });
+  if (mcpUrl === null) return null;
+  const tunnelAvailable = tunnelMcpUrl !== null;
+  const tunnelReachability = tunnelAvailable ? cloudLink.data?.reachability : undefined;
+  const loopback = isLoopbackHostname(new URL(mcpUrl).hostname);
+  return (
+    <SettingsRow
+      {...setting("mcp-url")}
+      description={
+        tunnelReachability?.status === "reachable"
+          ? gt("Tunnel connected. Give this URL to a hosted agent, such as ChatGPT: {url}", {
+              url: mcpUrl,
+            })
+          : tunnelReachability?.status === "unreachable"
+            ? gt(
+                "T3 Connect is unreachable right now, so a hosted agent can use this URL after the tunnel recovers: {url}",
+                { url: mcpUrl },
+              )
+            : tunnelAvailable
+              ? gt("Give this URL to a hosted agent, such as ChatGPT: {url}", { url: mcpUrl })
+              : loopback
+                ? gt("Give this URL to an agent running on this machine: {url}", { url: mcpUrl })
+                : gt("Give this URL to an agent that can reach this environment: {url}", {
+                    url: mcpUrl,
+                  })
+      }
+      control={
+        <Button size="sm" variant="outline" onClick={() => copyMcpUrl(mcpUrl, { url: mcpUrl })}>
+          <T>Copy</T>
+        </Button>
+      }
+    />
   );
 }
 
@@ -498,10 +570,10 @@ function CloudLinkSwitch({
     />
   );
   return disabledReason ? (
-    <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex">{control}</span>} />
-      <TooltipPopup side="top">{disabledReason}</TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={<span className="inline-flex">{control}</span>}
+      label={disabledReason}
+    />
   ) : (
     control
   );
@@ -542,6 +614,8 @@ function T3ConnectTunnelUsage({ tunnelLimit }: { readonly tunnelLimit: number | 
           ) : null
         }
       />
+    ) : usage.loading ? (
+      <TunnelUsageMeterSkeleton />
     ) : null;
   return (
     <>

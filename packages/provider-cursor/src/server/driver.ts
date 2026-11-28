@@ -12,7 +12,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as HttpClient from "effect/http/HttpClient";
 import { cursorRateModel } from "./accountUsage.ts";
-import { readCursorAccountUsage } from "./usageLimits.ts";
+import { readCursorAccountUsage, readCursorUsageLimits } from "./usageLimits.ts";
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { makeCursorTextGeneration } from "./textGeneration.ts";
@@ -278,6 +278,17 @@ export const CursorDriver: ProviderDriver<
       Effect.provideService(HttpClient.HttpClient, httpClient),
     );
 
+    const checkUsageLimits = auth.readApiKey.pipe(
+      Effect.orElseSucceed(() => undefined),
+      Effect.flatMap((apiKey) =>
+        readCursorUsageLimits(effectiveConfig, {
+          ...processEnv,
+          CURSOR_API_KEY: apiKey,
+        }),
+      ),
+      Effect.provideService(HttpClient.HttpClient, httpClient),
+    );
+
     const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
     const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<CursorSettings>>({
       resolveMaintenance: () => Effect.succeed(MAINTENANCE_CAPABILITIES),
@@ -287,6 +298,7 @@ export const CursorDriver: ProviderDriver<
       initialSnapshot: (settings) =>
         buildInitialCursorProviderSnapshot(settings.provider).pipe(Effect.map(stampSnapshot)),
       checkProvider,
+      checkUsageLimits,
     }).pipe(
       Effect.mapError(
         (cause) =>

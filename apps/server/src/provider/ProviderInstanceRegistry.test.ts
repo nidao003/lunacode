@@ -13,6 +13,7 @@ import {
   type ClaudeSettings,
   type CodexSettings,
   ProviderDriverKind,
+  type ProviderInstanceConfig,
   type ProviderInstanceConfigMap,
   type ResolvedProviderInstanceEnvironment,
   ProviderInstanceId,
@@ -205,7 +206,15 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         ProviderEventLoggers.NoOpProviderEventLoggers,
       ),
     ),
-    Layer.provideMerge(ProviderLatestVersions.layer),
+    // A real lookup runs `npm view` with its cache in the temp base dir and can outlive that
+    // dir's removal at teardown; no test here checks version advisories.
+    Layer.provideMerge(
+      Layer.succeed(ProviderLatestVersions.ProviderLatestVersions, {
+        cached: () => Effect.succeed(null),
+        invalidate: () => Effect.void,
+        invalidateAll: Effect.void,
+      }),
+    ),
     Layer.provideMerge(McpProviderSessions.layer),
     Layer.provideMerge(ProviderInstallationGate.layer),
     Layer.provideMerge(ModelManifest.layerTest),
@@ -678,6 +687,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
           [claudeId]: {
             driver: ProviderDriverKind.make("claudeAgent"),
             enabled: true,
+            usageAccess: "allowed",
             config: makeClaudeConfig({
               enabled: true,
               binaryPath: fixtures.claudeBinaryPath,
@@ -758,12 +768,16 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
-  const redeemClaudeReset = (claim: { result: string; usageFailsAfterClaim: boolean }) =>
+  const makeClaudeResetRegistry = (
+    claim: { result: string; usageFailsAfterClaim: boolean },
+    usageAccess: "allowed" | undefined,
+  ) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const fixtures = yield* makeTildeProviderFixtures();
       const marker = path.join(fixtures.claudeHomePath, "redeemed");
+      let usageReads = 0;
       yield* fs.writeFileString(
         path.join(fixtures.claudeHomePath, ".credentials.json"),
         '{"claudeAiOauth":{"accessToken":"fake-token"}}',
@@ -775,6 +789,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
       const client = HttpClient.make((request) =>
         Effect.gen(function* () {
           if (request.url.endsWith("/api/oauth/usage")) {
+            usageReads += 1;
             return HttpClientResponse.fromWeb(
               request,
               Response.json({
@@ -794,47 +809,88 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         }),
       );
       const instanceId = ProviderInstanceId.make("claude_reset");
-      const { registry } = yield* makeProviderInstanceRegistry({
+      const entry: ProviderInstanceConfig = {
+        driver: ProviderDriverKind.make("claudeAgent"),
+        enabled: true,
+        ...(usageAccess === undefined ? {} : { usageAccess }),
+        environment: [
+          { name: "T3_CLAUDE_RESET_MARKER", value: marker, sensitive: false },
+          ...(claim.usageFailsAfterClaim
+            ? [{ name: "T3_CLAUDE_USAGE_FAILS_AFTER_CLAIM", value: "1", sensitive: false }]
+            : []),
+        ],
+        config: makeClaudeConfig({
+          enabled: true,
+          binaryPath: fixtures.claudeBinaryPath,
+          homePath: fixtures.claudeHomePath,
+        }),
+      };
+      const { registry, mutator } = yield* makeProviderInstanceRegistry({
         drivers: [ClaudeDriver],
-        configMap: {
-          [instanceId]: {
-            driver: ProviderDriverKind.make("claudeAgent"),
-            enabled: true,
-            environment: [
-              { name: "T3_CLAUDE_RESET_MARKER", value: marker, sensitive: false },
-              ...(claim.usageFailsAfterClaim
-                ? [{ name: "T3_CLAUDE_USAGE_FAILS_AFTER_CLAIM", value: "1", sensitive: false }]
-                : []),
-            ],
-            config: makeClaudeConfig({
-              enabled: true,
-              binaryPath: fixtures.claudeBinaryPath,
-              homePath: fixtures.claudeHomePath,
-            }),
-          },
-        },
+        configMap: { [instanceId]: entry },
       }).pipe(Effect.provideService(HttpClient.HttpClient, client));
+      return { registry, mutator, instanceId, entry, usageReads: () => usageReads };
+    });
+
+  const redeemClaudeReset = (claim: { result: string; usageFailsAfterClaim: boolean }) =>
+    Effect.gen(function* () {
+      const { registry, instanceId, usageReads } = yield* makeClaudeResetRegistry(claim, "allowed");
       const instance = yield* registry.getInstance(instanceId);
       expect(instance).toBeDefined();
       const before = yield* instance!.snapshot.refresh;
       expect(before.usageLimits?.windows[0]?.usedPercent).toBe(100);
-      expect(before.usageLimits?.resetCredits?.nextCreditId).toBe("grant_a");
+      // LUNA-011: Anthropic private /api/oauth/usage & /reset_rate_limits endpoints are disabled.
+      expect(before.usageLimits?.resetCredits).toBeUndefined();
+      expect(usageReads()).toBe(0);
       const outcome = yield* instance!.consumeResetCredit!(undefined).pipe(Effect.result);
-      return { outcome, after: yield* instance!.snapshot.getSnapshot };
+      return { outcome, after: yield* instance!.snapshot.getSnapshot, usageReads };
     }).pipe(
       // macOS logins live in the Keychain, where resets are never read.
       Effect.provideService(HostProcess.Platform, "linux"),
       Effect.provide(layerTest),
     );
 
+  it.live.skipIf(windowsHost)(
+    "reads Claude's sign-in for its organization and reset credits only once usage access is allowed",
+    () =>
+      Effect.gen(function* () {
+        const { registry, mutator, instanceId, entry, usageReads } = yield* makeClaudeResetRegistry(
+          { result: "reset", usageFailsAfterClaim: false },
+          undefined,
+        );
+        const instance = yield* registry.getInstance(instanceId);
+        const before = yield* instance!.snapshot.refresh;
+        expect(before.usageLimits?.windows[0]?.usedPercent).toBe(100);
+        expect(before.usageLimits?.resetCredits).toBeUndefined();
+        expect(before.auth.workspaceId).toBeUndefined();
+        expect(usageReads()).toBe(0);
+
+        // The limits-only refresh waits for usage access too.
+        yield* instance!.snapshot.refreshUsage!;
+        const limitsOnly = yield* instance!.snapshot.getSnapshot;
+        expect(limitsOnly.usageLimits?.resetCredits).toBeUndefined();
+        expect(limitsOnly.auth.workspaceId).toBeUndefined();
+        expect(usageReads()).toBe(0);
+
+        yield* mutator.reconcile({ [instanceId]: { ...entry, usageAccess: "allowed" } });
+        // Granting access keeps the running instance, so its sessions survive.
+        expect(yield* registry.getInstance(instanceId)).toBe(instance);
+        const after = yield* instance!.snapshot.refresh;
+        expect(after.usageLimits?.resetCredits).toBeUndefined();
+        expect(usageReads()).toBe(0);
+        expect(after.auth.workspaceId).toBe("fake-org");
+      }).pipe(Effect.provideService(HostProcess.Platform, "linux"), Effect.provide(layerTest)),
+  );
+
   it.live.skipIf(windowsHost)("refreshes Claude usage after redeeming a reset", () =>
     Effect.gen(function* () {
-      const { outcome, after } = yield* redeemClaudeReset({
+      const { outcome, after, usageReads } = yield* redeemClaudeReset({
         result: "reset",
         usageFailsAfterClaim: false,
       });
-      expect(outcome).toMatchObject({ _tag: "Success", success: "reset" });
-      expect(after.usageLimits?.windows[0]?.usedPercent).toBe(0);
+      expect(outcome).toMatchObject({ _tag: "Success", success: "noCredit" });
+      expect(usageReads()).toBe(0);
+      expect(after.usageLimits?.resetCredits).toBeUndefined();
     }),
   );
 
@@ -842,11 +898,12 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
     "reports Claude's answer when a claim changed nothing and the re-probe fails",
     () =>
       Effect.gen(function* () {
-        const { outcome } = yield* redeemClaudeReset({
+        const { outcome, usageReads } = yield* redeemClaudeReset({
           result: "already_used",
           usageFailsAfterClaim: true,
         });
-        expect(outcome).toMatchObject({ _tag: "Success", success: "alreadyRedeemed" });
+        expect(outcome).toMatchObject({ _tag: "Success", success: "noCredit" });
+        expect(usageReads()).toBe(0);
       }),
   );
 

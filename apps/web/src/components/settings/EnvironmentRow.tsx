@@ -20,7 +20,9 @@ import { LUNACODE_CONNECT_NAME } from "@t3tools/client-runtime/lunacode/brand-di
 const T3_CONNECT_NAME = LUNACODE_CONNECT_NAME;
 
 export function formatDesktopSshTarget(target: DesktopSshEnvironmentTarget): string {
-  const authority = target.username ? `${target.username}@${target.hostname}` : target.hostname;
+  const host =
+    target.port && target.hostname.includes(":") ? `[${target.hostname}]` : target.hostname;
+  const authority = target.username ? `${target.username}@${host}` : host;
   return target.port ? `${authority}:${target.port}` : authority;
 }
 

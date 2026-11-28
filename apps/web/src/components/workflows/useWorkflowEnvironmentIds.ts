@@ -7,5 +7,5 @@ import { useConnectedEnvironmentIds } from "../../state/environments";
 export function useWorkflowEnvironmentIds(): ReadonlyArray<EnvironmentId> {
   const connectedIds = useConnectedEnvironmentIds();
   const configs = useServerConfigs();
-  return connectedIds.filter((id) => configs.get(id)?.settings.workflowsEnabled === true);
+  return connectedIds.filter((id) => configs.get(id)?.settings?.workflowsEnabled === true);
 }

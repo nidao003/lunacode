@@ -35,6 +35,7 @@ import { formatEnvironmentQueryError } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { LunaMobileWorkflowsRootSwitch } from "../../lunacode/workflows/LunaMobileWorkflowWrappers";
+import { useWorkflowSubjectOpener, workflowSubjectLine } from "./WorkflowSubject";
 
 const TABS = [
   {
@@ -78,7 +79,12 @@ export function WorkflowChip(props: { readonly name: string }) {
   );
 }
 
-function RunRow(props: { readonly node: WorkflowRunNode; readonly onOpen: () => void }) {
+function RunRow(props: {
+  readonly node: WorkflowRunNode;
+  readonly onOpen: () => void;
+  /** Null when the run has no subject, or one this device cannot open. */
+  readonly onOpenSubject: (() => void) | null;
+}) {
   const { run } = props.node;
   const m = useMessages();
   const state = workflowRunState(props.node, m);
@@ -101,6 +107,25 @@ function RunRow(props: { readonly node: WorkflowRunNode; readonly onOpen: () => 
       <Text className="font-t3-medium text-base text-foreground" numberOfLines={1}>
         {run.title}
       </Text>
+      {run.subject === undefined ? null : (
+        <Pressable
+          accessibilityRole="link"
+          disabled={props.onOpenSubject === null}
+          onPress={props.onOpenSubject ?? undefined}
+          hitSlop={6}
+          className="self-start active:opacity-60"
+        >
+          <Text
+            className={cn(
+              "text-xs",
+              props.onOpenSubject === null ? "text-foreground-secondary" : "text-primary",
+            )}
+            numberOfLines={1}
+          >
+            {workflowSubjectLine(run.subject)}
+          </Text>
+        </Pressable>
+      )}
       <View className="flex-row items-center gap-2">
         <Text className="min-w-0 flex-1 text-xs text-foreground-muted" numberOfLines={1}>
           {workflowRunNow(props.node, m)}
@@ -125,6 +150,7 @@ function EnvironmentRuns(props: {
   const navigation = useNavigation();
   const gt = useGT();
   const m = useMessages();
+  const subjectOpener = useWorkflowSubjectOpener(props.environmentId);
   const [showSkipped, setShowSkipped] = useState(false);
   const { snapshot, tab } = props;
   const visible = listedWorkflowRuns(snapshot.runs, showSkipped);
@@ -152,6 +178,7 @@ function EnvironmentRuns(props: {
           <RunRow
             key={node.run.runId}
             node={node}
+            onOpenSubject={node.run.subject === undefined ? null : subjectOpener(node.run.subject)}
             onOpen={() =>
               navigation.navigate("WorkflowRun", {
                 environmentId: props.environmentId,
