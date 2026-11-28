@@ -11,6 +11,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppBar } from "../../components/ui/AppBar";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
@@ -42,6 +43,7 @@ const STATUS_LABEL: Readonly<Record<BotTask["status"], string>> = {
 
 function MobileBotsBody({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const botsQuery = useEnvironmentQuery(serverEnvironment.botsLive({ environmentId, input: {} }));
   const snapshot = botsQuery.data;
 
@@ -182,11 +184,18 @@ function MobileBotsBody({ environmentId }: { readonly environmentId: Environment
 
   if (snapshot === null) {
     return (
-      <EmptyState
-        variant="plain"
-        title={botsQuery.error ?? "加载 Bot 集群中..."}
-        detail="正在同步常驻 Bot 与任务状态"
-      />
+      <ScreenScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        className="flex-1 bg-screen"
+        contentContainerClassName="flex-grow items-center justify-center px-6"
+        contentContainerStyle={{ paddingBottom: insets.bottom + 36 }}
+      >
+        <EmptyState
+          variant="plain"
+          title={botsQuery.error ?? "加载 Bot 集群中..."}
+          detail="正在同步常驻 Bot 与任务状态"
+        />
+      </ScreenScrollView>
     );
   }
 
@@ -196,7 +205,12 @@ function MobileBotsBody({ environmentId }: { readonly environmentId: Environment
 
   if (bots.length === 0) {
     return (
-      <View className="flex-1 items-center justify-center px-6">
+      <ScreenScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        className="flex-1 bg-screen"
+        contentContainerClassName="flex-grow items-center justify-center px-6"
+        contentContainerStyle={{ paddingBottom: insets.bottom + 36 }}
+      >
         <EmptyState
           variant="plain"
           title="尚未启用常驻 Bot 集群"
@@ -204,12 +218,18 @@ function MobileBotsBody({ environmentId }: { readonly environmentId: Environment
           actionLabel={seeding ? "初始化中..." : "加载预设集群"}
           onAction={() => void handleSeed()}
         />
-      </View>
+      </ScreenScrollView>
     );
   }
 
   return (
-    <ScreenScrollView className="flex-1" contentContainerClassName="gap-3 px-4 py-3 pb-10">
+    <ScreenScrollView
+      contentInsetAdjustmentBehavior="automatic"
+      keyboardShouldPersistTaps="handled"
+      className="flex-1 bg-screen"
+      contentContainerClassName="gap-3 px-4 pt-3"
+      contentContainerStyle={{ paddingBottom: insets.bottom + 36 }}
+    >
       <SegmentedControl
         variant="standalone"
         options={[
@@ -411,6 +431,7 @@ function MobileBotsBody({ environmentId }: { readonly environmentId: Environment
 
 export function LunaMobileBotsScreen({ route }: StaticScreenProps<LunaMobileBotsParams>) {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const { environments } = useEnvironments();
   const requestedEnvId = route.params?.environmentId
     ? EnvironmentId.make(route.params.environmentId)
@@ -418,7 +439,7 @@ export function LunaMobileBotsScreen({ route }: StaticScreenProps<LunaMobileBots
   const environmentId = requestedEnvId ?? environments[0]?.environmentId ?? null;
 
   return (
-    <View className="flex-1 bg-screen">
+    <View collapsable={false} className="flex-1 bg-screen">
       <AppBar
         title="常驻 Bot 集群"
         onBack={() => {
@@ -426,11 +447,18 @@ export function LunaMobileBotsScreen({ route }: StaticScreenProps<LunaMobileBots
         }}
       />
       {environmentId === null ? (
-        <EmptyState
-          variant="plain"
-          title="尚未连接运行环境"
-          detail="连接桌面或服务器环境后即可查看和管理常驻 Bot 集群。"
-        />
+        <ScreenScrollView
+          contentInsetAdjustmentBehavior="automatic"
+          className="flex-1 bg-screen"
+          contentContainerClassName="flex-grow items-center justify-center px-6"
+          contentContainerStyle={{ paddingBottom: insets.bottom + 36 }}
+        >
+          <EmptyState
+            variant="plain"
+            title="尚未连接运行环境"
+            detail="连接桌面或服务器环境后即可查看和管理常驻 Bot 集群。"
+          />
+        </ScreenScrollView>
       ) : (
         <MobileBotsBody environmentId={environmentId} />
       )}

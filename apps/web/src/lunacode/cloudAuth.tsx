@@ -67,7 +67,13 @@ function readInitialStored(): StoredLunaAuth | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<StoredLunaAuth>;
     if (!parsed.user?.id || !parsed.user?.email) return null;
-    const activeUrl = resolveLunaAuthUrl();
+    let activeUrl = resolveLunaAuthUrl();
+    if (activeUrl === null && typeof parsed.serverUrl === "string") {
+      const recoveredUrl = normalizeLunaServerUrlInput(parsed.serverUrl);
+      if (recoveredUrl !== null) {
+        activeUrl = writeLunaAuthUrlOverride(recoveredUrl);
+      }
+    }
     if (typeof parsed.serverUrl === "string" && parsed.serverUrl !== activeUrl) {
       return null;
     }

@@ -248,12 +248,18 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
 
 // Match iOS PostScript names on Android so RN and the native composer share fonts before runtime loading.
 
+function deriveMobileBuildNumber(version: string): number {
+  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version.trim());
+  if (!match) return 1;
+  return Math.max(1, Number(match[1]) * 10000 + Number(match[2]) * 100 + Number(match[3]));
+}
+
 const config: ExpoConfig = {
   name: variant.appName,
   slug: "t3-code",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: repoEnv.T3CODE_MOBILE_VERSION ?? "2.4.0",
+  version: repoEnv.T3CODE_MOBILE_VERSION ?? "0.1.13",
   runtimeVersion: {
     // Skip costly fingerprinting on dev launches; preview and production OTAs require matching native projects.
     policy: runtimeVersionPolicy,
@@ -274,6 +280,7 @@ const config: ExpoConfig = {
     supportsTablet: true,
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
+    buildNumber: String(deriveMobileBuildNumber(repoEnv.T3CODE_MOBILE_VERSION ?? "0.1.13")),
     // Avoid Personal Team fallback: it cannot sign App Groups, Apple sign-in or push entitlements.
     appleTeamId: isIosPersonalTeamBuild
       ? repoEnv.T3CODE_IOS_TEAM_ID?.trim() || undefined
@@ -325,6 +332,7 @@ const config: ExpoConfig = {
   android: {
     icon: variant.assets.appIcon,
     package: variant.androidPackage,
+    versionCode: deriveMobileBuildNumber(repoEnv.T3CODE_MOBILE_VERSION ?? "0.1.13"),
     ...(repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE
       ? { googleServicesFile: repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE }
       : {}),

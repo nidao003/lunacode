@@ -156,7 +156,13 @@ export async function hydrateLunaMobileAuth(): Promise<void> {
     const raw = await SecureStore.getItemAsync(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<StoredMobileSession>;
-      const activeUrl = readLunaMobileAuthUrl();
+      let activeUrl = readLunaMobileAuthUrl();
+      if (activeUrl === null && typeof parsed.serverUrl === "string") {
+        const recoveredUrl = normalizeLunaMobileServerUrlInput(parsed.serverUrl);
+        if (recoveredUrl !== null) {
+          activeUrl = setLunaAuthUrlOverride(recoveredUrl);
+        }
+      }
       if (
         parsed.user?.id &&
         parsed.user?.email &&

@@ -847,6 +847,7 @@ jobs:
       APP_VARIANT: production
       EXPO_NO_GIT_STATUS: "1"
       EXPO_NO_TYPESCRIPT_SETUP: "1"
+      T3CODE_MOBILE_VERSION: ${{ needs.prepare.outputs.version }}
       NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - name: Sparse checkout
@@ -962,6 +963,7 @@ jobs:
       EXPO_NO_TYPESCRIPT_SETUP: "1"
       T3CODE_IOS_PERSONAL_TEAM: "1"
       T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID: com.nidao003.lunacode.mobile
+      T3CODE_MOBILE_VERSION: ${{ needs.prepare.outputs.version }}
       NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - name: Sparse checkout
